@@ -358,6 +358,74 @@ export class MidiFileSequencer {
         return anyEventsDispatched;
     }
 
+    /**
+     * Dispatches all events before the given time and moves the current state there. Used while the
+     * synthesizer follows a media clock: the media decides the position, not the number of rendered samples.
+     * @param midiTime The song time in milliseconds at speed 1.
+     * @returns Whether any events were dispatched.
+     */
+    public fillMidiEventQueueUntil(midiTime: number): boolean {
+        const state = this._currentState;
+        if (midiTime <= state.currentTime) {
+            return false;
+        }
+        state.currentTime = midiTime;
+        let anyEventsDispatched = false;
+        while (state.eventIndex < state.synthData.length && state.synthData[state.eventIndex].time < midiTime) {
+            this._synthesizer.dispatchEvent(state.synthData[state.eventIndex]);
+            state.eventIndex++;
+            anyEventsDispatched = true;
+        }
+        return anyEventsDispatched;
+    }
+
+    /**
+     * The song time (milliseconds at speed 1) that plays while the media is at the given time. With sync
+     * points it is the mapping the backing-track cursor uses. Without sync points the media plays the song at
+     * its own tempo, so the media time is the song time at any playback speed.
+     */
+    public mainMidiTimeFromMediaTime(mediaTime: number, mediaDuration: number): number {
+        if (mediaTime < 0 || this._mainState.syncPoints.length === 0) {
+            return mediaTime;
+        }
+        return this.mainTimePositionFromBackingTrack(mediaTime, mediaDuration) * this.playbackSpeed;
+    }
+
+    /**
+     * The media time at which the main song reaches the given tick (the inverse of
+     * {@link mainMidiTimeFromMediaTime}). At or past the last sync point it is that point's media time.
+     */
+    public mainTickToMediaTime(tick: number, mediaDuration: number): number {
+        const timePosition = this.mainTickPositionToTimePosition(tick);
+        const syncPoints = this._mainState.syncPoints;
+        if (syncPoints.length === 0) {
+            return timePosition * this.playbackSpeed;
+        }
+        // the generator's last sync point marks the song's end, where today's mapping divides 0 by 0 (NaN; a
+        // latent bug in today's code, left as it is): a tick at or past that point maps to its media time
+        const last = syncPoints[syncPoints.length - 1];
+        if (timePosition * this.playbackSpeed >= last.synthTime) {
+            return last.syncTime;
+        }
+        return this.mainTimePositionToBackingTrack(timePosition, mediaDuration);
+    }
+
+    /**
+     * The media's tempo at the given media time: the BPM of the sync point active there, or 0 without sync
+     * points.
+     */
+    public mainSyncBpmAt(mediaTime: number): number {
+        const syncPoints = this._mainState.syncPoints;
+        if (syncPoints.length === 0) {
+            return 0;
+        }
+        let index = 0;
+        while (index + 1 < syncPoints.length && syncPoints[index + 1].syncTime <= mediaTime) {
+            index++;
+        }
+        return syncPoints[index].syncBpm;
+    }
+
     private _fillMidiEventQueueLimited(maxMilliseconds: number): boolean {
         let millisecondsPerBuffer: number =
             (SynthConstants.MicroBufferSize / this._synthesizer.outSampleRate) * 1000 * this.playbackSpeed;
@@ -661,15 +729,18 @@ export class MidiFileSequencer {
         this._currentState = this._mainState;
     }
 
-    public startCountIn() {
-        this.generateCountInMidi();
+    /**
+     * @param bpm The count-in's tempo; 0 (default) for the tempo at the current position, as before.
+     */
+    public startCountIn(bpm: number = 0) {
+        this.generateCountInMidi(bpm);
         this._currentState = this._countInState!;
 
         this.stop();
         this._synthesizer.noteOffAll(true);
     }
 
-    generateCountInMidi() {
+    generateCountInMidi(bpmOverride: number = 0) {
         const state = new MidiSequencerState();
         state.division = this._mainState.division;
 
@@ -684,6 +755,9 @@ export class MidiFileSequencer {
             bpm = this._synthesizer.currentTempo;
             timeSignatureNumerator = this._synthesizer.timeSignatureNumerator;
             timeSignatureDenominator = this._synthesizer.timeSignatureDenominator;
+        }
+        if (bpmOverride > 0) {
+            bpm = bpmOverride;
         }
 
         state.tempoChanges.push(new MidiFileSequencerTempoChange(bpm, 0, 0));
