@@ -306,6 +306,14 @@ export class MediaSynthPlayer implements IAlphaSynth {
         return this._synthFailure !== '' || !this._hasSoundFont;
     }
 
+    /**
+     * The worker or the worklet failed, and nothing later undoes that. A SoundFont failure is different: a SoundFont
+     * loaded later ends that fallback.
+     */
+    private get _synthLost(): boolean {
+        return this._synthFailure !== '' && !this._synthFailure.startsWith(MediaSynthPlayer._soundFontFailure);
+    }
+
     private _checkReady(): void {
         if (!this._readyFired && this.isReady) {
             this._readyFired = true;
@@ -320,6 +328,10 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     private _onSynthReadyForPlayback(): void {
+        if (this._synthLost) {
+            // a worker that still answers after its error does not bring the synthesizer back
+            return;
+        }
         this._synthReadyForPlayback = true;
         // a SoundFont loaded later (api.loadSoundFont(), FYI-4) ends the fallback
         this._hasSoundFont = true;
@@ -336,9 +348,13 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     private _fallBackToMediaOnly(reason: string): void {
-        if (this._synthFailure !== '') {
+        if (this._synthLost || (this._synthFailure !== '' && reason.startsWith(MediaSynthPlayer._soundFontFailure))) {
+            // the media plays alone already, for a reason that stays or of the same kind: a second event changes
+            // nothing. (A worker or worklet failure on top of a SoundFont failure is recorded, so that a SoundFont
+            // loaded later does not end the fallback.)
             return;
         }
+        const wasReady = this.isReadyForPlayback;
         this._synthFailure = reason;
         Logger.warning('Player', `The synthesizer can't play along the media; playing the media only: ${reason}`);
         if (this._state === PlayerState.Playing) {
@@ -347,7 +363,10 @@ export class MediaSynthPlayer implements IAlphaSynth {
             this._synth.pause();
         }
         this._checkReady();
-        this._checkReadyForPlayback();
+        if (!wasReady) {
+            // readyForPlayback fires once per song: not again when the media was ready for this one already
+            this._checkReadyForPlayback();
+        }
     }
 
     // ---- volumes (§6.1, §7) ----
@@ -707,6 +726,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
     public loadMidiFile(midi: MidiFile): void {
         this.stop();
         this._midiLoaded = true;
+        if (!this._isMediaOnly) {
+            // the synthesizer is ready for this song when its worker says so; the media is ready at once. Players
+            // fire readyForPlayback once per song, after the song is loaded (in the fallback it follows the media).
+            this._synthReadyForPlayback = false;
+        }
         this._media.loadMidiFile(midi);
         this._synth.loadMidiFile(midi);
     }
