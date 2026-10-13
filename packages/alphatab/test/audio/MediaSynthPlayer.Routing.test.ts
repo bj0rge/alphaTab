@@ -64,23 +64,79 @@ describe('MediaSynthPlayerRoutingTests', () => {
         expect(h.probe.requests).toEqual([1]);
     });
 
-    it('ready-for-playback-fires-once-per-song-and-waits-for-the-synth', async () => {
-        // today's players fire it once per loaded song, after the song is loaded; mixing keeps that contract
+    it('ready-for-playback-fires-once-per-song-after-the-synth-has-it', async () => {
+        // The worker's API raises readyForPlayback on midiLoaded and again on readyForPlayback, and never clears its
+        // flag: synth-only mode fires it twice per song from the second one on, backing-track mode once. The combined
+        // player fires it once per song, and not before the synthesizer has the song.
         const h = new MediaSynthHarness();
         let ready = 0;
-        h.player.readyForPlayback.on(() => ready++);
+        h.player.readyForPlayback.on(() => {
+            ready++;
+            h.synth.calls.push('readyForPlayback');
+        });
         await h.loadSong(false);
         h.synth.becomeReady();
         expect(ready).toBe(0); // the media has the song, the synth does not
         h.synth.becomeReadyForPlayback();
         expect(ready).toBe(1);
 
-        await h.loadSong(false); // the next song
-        expect(h.player.isReadyForPlayback).toBe(false); // not before the synth has this one
-        expect(ready).toBe(1);
-        h.synth.becomeReadyForPlayback();
+        await h.loadSong(false); // the next song: the fake raises it on midiLoaded as the worker's API does ...
+        h.synth.becomeReadyForPlayback(); // ... and again on readyForPlayback
         expect(h.player.isReadyForPlayback).toBe(true);
         expect(ready).toBe(2);
+        const calls = h.synth.calls;
+        expect(calls.lastIndexOf('loadMidiFile')).toBeLessThan(calls.lastIndexOf('readyForPlayback')); // not before
+    });
+
+    it('a-later-song-does-not-warm-up-or-probe-again', async () => {
+        // neither raise for a later song starts the background probe again: it would measure a speed that failed
+        // before its next use (§6.4)
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.probe.rejectNext(new Error('NotAllowedError')); // 1x fails and stays unmeasured
+        await flush();
+        for (let i = 0; i < 4; i++) {
+            h.probe.resolveNext(0); // 0.5, 0.75, 1.25, 1.5
+            await flush();
+        }
+        warning.mockRestore();
+        expect(h.probe.requests).toEqual([1, 0.5, 0.75, 1.25, 1.5]);
+
+        await h.loadSong(); // the next song
+        expect(h.synthOutput.warmUps).toBe(1);
+        expect(h.probe.requests).toEqual([1, 0.5, 0.75, 1.25, 1.5]);
+    });
+
+    it('a-soundfont-reload-while-a-song-is-loaded-fires-ready-for-playback-once', async () => {
+        // the app re-sends the channel volumes on readyForPlayback: a (re)loaded SoundFont gets one, no new warm-up
+        const h = new MediaSynthHarness();
+        let ready = 0;
+        h.player.readyForPlayback.on(() => ready++);
+        await h.loadSong();
+        expect(ready).toBe(1);
+        h.player.loadSoundFont(new Uint8Array(0), false);
+        expect(h.player.isReadyForPlayback).toBe(false); // until the worker has the SoundFont
+        h.synth.becomeReadyForPlayback(); // the worker raises it once for a SoundFont
+        expect(h.player.isReadyForPlayback).toBe(true);
+        expect(ready).toBe(2);
+        expect(h.synthOutput.warmUps).toBe(1);
+    });
+
+    it('a-soundfont-after-a-soundfont-failure-brings-the-synth-back', async () => {
+        // the synth was ready before the failure: in the fallback its raise is not "already ready", it joins
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        let ready = 0;
+        h.player.readyForPlayback.on(() => ready++);
+        await h.loadSong();
+        (h.player.soundFontLoadFailed as EventEmitterOfT<Error>).trigger(new Error('connection refused'));
+        warning.mockRestore();
+        expect(ready).toBe(1); // the media was ready for this song already
+        h.player.loadSoundFont(new Uint8Array(0), false);
+        h.synth.becomeReadyForPlayback();
+        expect(ready).toBe(2);
+        expect(h.synthOutput.warmUps).toBe(1);
     });
 
     it('in-the-media-only-fallback-each-song-is-ready-with-the-media', async () => {

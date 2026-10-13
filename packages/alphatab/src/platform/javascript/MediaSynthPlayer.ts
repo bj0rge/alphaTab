@@ -205,6 +205,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _midiLoaded: boolean = false;
     private _hasSoundFont: boolean;
     private _synthReadyForPlayback: boolean = false;
+    private _warmedUp: boolean = false;
     private _synthFailure: string = '';
     private _readyFired: boolean = false;
     private _destroyed: boolean = false;
@@ -332,14 +333,22 @@ export class MediaSynthPlayer implements IAlphaSynth {
             // a worker that still answers after its error does not bring the synthesizer back
             return;
         }
+        if (this._synthReadyForPlayback && !this._isMediaOnly) {
+            // already ready for this song: the worker's API raises readyForPlayback twice per song from the second
+            // one on (on midiLoaded and on readyForPlayback, it never clears its flag), the combined player fires once.
+            // (In the fallback the raise that brings the synthesizer back passes.)
+            return;
+        }
         this._synthReadyForPlayback = true;
         // a SoundFont loaded later (api.loadSoundFont(), FYI-4) ends the fallback
         this._hasSoundFont = true;
         if (this._synthFailure.startsWith(MediaSynthPlayer._soundFontFailure)) {
             this._synthFailure = '';
         }
-        if (this._synthFailure === '') {
-            // build the worklet before the first Play, measure the media latency in the background (§6.1, §6.4)
+        if (!this._warmedUp) {
+            // build the worklet before the first Play, measure the media latency in the background (§6.1, §6.4);
+            // once: a later song or SoundFont, or a synthesizer that comes back, neither warms up nor probes again
+            this._warmedUp = true;
             this._synthOutput.keepAlive = true;
             this._synthOutput.warmUp();
             this._startBackgroundProbe();
@@ -715,6 +724,10 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     public loadSoundFont(data: Uint8Array, append: boolean): void {
+        if (!this._isMediaOnly) {
+            // ready again when the worker says so, once per SoundFont: the app re-sends the channel volumes on it
+            this._synthReadyForPlayback = false;
+        }
         this._synth.loadSoundFont(data, append);
     }
 
@@ -727,8 +740,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this.stop();
         this._midiLoaded = true;
         if (!this._isMediaOnly) {
-            // the synthesizer is ready for this song when its worker says so; the media is ready at once. Players
-            // fire readyForPlayback once per song, after the song is loaded (in the fallback it follows the media).
+            // the synthesizer is ready for this song when its worker says so; the media is ready at once. The combined
+            // player fires readyForPlayback once per song, after the synthesizer has it (in the fallback it follows
+            // the media).
             this._synthReadyForPlayback = false;
         }
         this._media.loadMidiFile(midi);
