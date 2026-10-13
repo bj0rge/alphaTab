@@ -1,12 +1,19 @@
 import { Environment } from '@coderline/alphatab/Environment';
+import { EventEmitterOfT, type IEventEmitterOfT } from '@coderline/alphatab/EventEmitter';
 import { Logger } from '@coderline/alphatab/Logger';
 import type { Settings } from '@coderline/alphatab/Settings';
 import { AlphaSynthWebAudioOutputBase } from '@coderline/alphatab/platform/javascript/AlphaSynthWebAudioOutputBase';
 import { BrowserUiFacade } from '@coderline/alphatab/platform/javascript/BrowserUiFacade';
+import { MediaChunkMarkers } from '@coderline/alphatab/platform/javascript/MediaChunkMarkers';
+import {
+    type IMediaFollowingOutput,
+    MediaTimestampEventArgs
+} from '@coderline/alphatab/platform/javascript/MediaSynthTypes';
 import type {
     IAlphaSynthWorkerMessage,
     IAlphaTabWorker
 } from '@coderline/alphatab/platform/worker/AlphaTabWorkerProtocol';
+import type { MediaSampleChunk } from '@coderline/alphatab/synth/MediaSampleOutput';
 import { SynthConstants } from '@coderline/alphatab/synth/SynthConstants';
 import { CircularSampleBuffer } from '@coderline/alphatab/synth/ds/CircularSampleBuffer';
 
@@ -55,6 +62,11 @@ declare let registerProcessor: any;
  * @internal
  */
 declare let sampleRate: number;
+/**
+ * @target web
+ * @internal
+ */
+declare let currentFrame: number;
 
 /**
  * This class implements a HTML5 Web Audio API based audio output device
@@ -79,6 +91,9 @@ export class AlphaSynthWebWorklet {
                 private _bufferCount: number = 0;
                 private _requestedBufferCount: number = 0;
                 private _isStopped = false;
+                private _markers: MediaChunkMarkers = new MediaChunkMarkers();
+                private _framesSinceReport: number = 0;
+                private _isHeld: boolean = false;
 
                 constructor(options: AudioWorkletNodeOptions) {
                     super(options);
@@ -102,16 +117,44 @@ export class AlphaSynthWebWorklet {
                     const data = e.data;
                     const cmd = data.cmd;
                     switch (cmd) {
-                        case 'alphaSynth.output.addSamples':
+                        case 'alphaSynth.output.addSamples': {
+                            // never below 0: a negative count over-requests forever, the overflow is dropped
+                            // and the synth runs fast (spike finding F8)
+                            this._requestedBufferCount = Math.max(0, this._requestedBufferCount - 1);
+                            if (this._isHeld) {
+                                break;
+                            }
                             const f: Float32Array = data.samples;
-                            this._circularBuffer.write(f, 0, f.length);
-                            this._requestedBufferCount--;
+                            const written = this._circularBuffer.write(f, 0, f.length);
+                            this._markers.push(
+                                written / SynthConstants.AudioChannels,
+                                data.mediaStart ?? -1,
+                                data.mediaPerFrame ?? 0,
+                                data.countInEnd === true,
+                                data.countInFramesLeft ?? -1
+                            );
+                            if (data.countInEnd === true || (data.countInFramesLeft ?? -1) >= 0) {
+                                // a count-in chunk already tells where the count-in ends, about a bar ahead;
+                                // between blocks currentFrame is the next block's first frame
+                                this._reportCountInEnd(currentFrame);
+                            }
                             break;
+                        }
                         case 'alphaSynth.output.resetSamples':
                             this._circularBuffer.clear();
+                            this._markers.clear();
                             break;
                         case 'alphaSynth.output.stop':
                             this._isStopped = true;
+                            break;
+                        case 'alphaSynth.output.hold':
+                            // kept alive while paused (mixing mode): silent, no requests
+                            this._isHeld = true;
+                            this._circularBuffer.clear();
+                            this._markers.clear();
+                            break;
+                        case 'alphaSynth.output.resume':
+                            this._isHeld = false;
                             break;
                     }
                 }
@@ -132,17 +175,26 @@ export class AlphaSynthWebWorklet {
                         return true;
                     }
 
+                    if (this._isHeld) {
+                        left.fill(0);
+                        right.fill(0);
+                        return true;
+                    }
+
                     const samples: number = left.length + right.length;
                     let buffer = this._outputBuffer;
                     if (buffer.length !== samples) {
                         buffer = new Float32Array(samples);
                         this._outputBuffer = buffer;
                     }
+                    const mediaTime = this._markers.mediaTimeAtReadPosition();
                     const samplesFromBuffer = this._circularBuffer.read(
                         buffer,
                         0,
                         Math.min(buffer.length, this._circularBuffer.count)
                     );
+                    const frames = samplesFromBuffer / SynthConstants.AudioChannels;
+                    const blockStamped = this._markers.consume(frames) && frames === left.length;
                     let s: number = 0;
                     const min = Math.min(left.length, samplesFromBuffer);
                     for (let i: number = 0; i < min; i++) {
@@ -161,9 +213,36 @@ export class AlphaSynthWebWorklet {
                         cmd: 'alphaSynth.output.samplesPlayed',
                         samples: samplesFromBuffer / SynthConstants.AudioChannels
                     });
+                    this._reportMediaTime(mediaTime, blockStamped, left.length);
                     this._requestBuffers();
 
                     return this._circularBuffer.count > 0 || !this._isStopped;
+                }
+
+                private _reportMediaTime(mediaTime: number, blockStamped: boolean, blockFrames: number): void {
+                    // about every 50 ms: "at this context frame I output this media time" (spec §5)
+                    this._framesSinceReport += blockFrames;
+                    if (this._framesSinceReport < sampleRate / 20) {
+                        return;
+                    }
+                    this._framesSinceReport = 0;
+                    if (mediaTime >= 0 && blockStamped) {
+                        this.port.postMessage({
+                            cmd: 'alphaSynth.output.mediaTimestamp',
+                            frame: currentFrame,
+                            mediaTime: mediaTime
+                        });
+                    }
+                    // refine the count-in end while it is still buffered (an underrun moves it);
+                    // in process() the next block starts after this one
+                    this._reportCountInEnd(currentFrame + blockFrames);
+                }
+
+                private _reportCountInEnd(nextBlockFrame: number): void {
+                    const frames = this._markers.framesUntilCountInEnd();
+                    if (frames >= 0) {
+                        this.port.postMessage({ cmd: 'alphaSynth.output.countInEnd', frame: nextBlockFrame + frames });
+                    }
                 }
 
                 private _requestBuffers(): void {
@@ -197,8 +276,64 @@ export class AlphaSynthWebWorklet {
  * @target web
  * @internal
  */
-export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase {
+export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase implements IMediaFollowingOutput {
     private _worklet: AudioWorkletNode<IAlphaSynthWorkerMessage> | null = null;
+    private _isWarm: boolean = false;
+
+    /**
+     * Keep the worklet between plays (mixing mode): pause holds it silently, play resumes it.
+     * @internal
+     */
+    public keepAlive: boolean = false;
+
+    /**
+     * Where the worklet's output goes (mixing mode: the synth's gain); the context's destination when null.
+     * @internal
+     */
+    public destinationNode: AudioNode | null = null;
+
+    /** @internal */
+    public readonly mediaTimestamp: IEventEmitterOfT<MediaTimestampEventArgs> =
+        new EventEmitterOfT<MediaTimestampEventArgs>();
+    /** @internal */
+    public readonly countInEnd: IEventEmitterOfT<number> = new EventEmitterOfT<number>();
+    /** @internal */
+    public readonly workletFailed: IEventEmitterOfT<Error> = new EventEmitterOfT<Error>();
+
+    /** @internal */
+    public get workletNode(): AudioNode | null {
+        return this._worklet;
+    }
+
+    /**
+     * The AudioContext the synthesizer plays into; the combined player routes the media into it too.
+     * @internal
+     */
+    public get audioContext(): AudioContext | null {
+        return this.context;
+    }
+
+    /**
+     * Creates the worklet now and holds it silent until the first play (warm start, spike finding F7).
+     * @internal
+     */
+    public warmUp(): void {
+        const ctx = this.context;
+        if (!ctx || this._isWarm) {
+            return;
+        }
+        this._isWarm = true;
+        this._enqueue(async () => {
+            if (this._worklet) {
+                return;
+            }
+            await this._start(ctx, []);
+            // _start() assigned it; re-read past the narrowing above
+            const worklet = this._worklet as AudioWorkletNode<IAlphaSynthWorkerMessage> | null;
+            worklet?.port.postMessage({ cmd: 'alphaSynth.output.hold' });
+        });
+    }
+
     private _bufferTimeInMilliseconds: number = 0;
     private readonly _settings: Settings;
     private _boundHandleMessage: (e: MessageEvent<IAlphaSynthWorkerMessage>) => void;
@@ -245,10 +380,17 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase {
 
     public override pause(): void {
         this._pendingEvents = undefined;
+        if (this.keepAlive) {
+            this._enqueue(() => {
+                this._worklet?.port.postMessage({ cmd: 'alphaSynth.output.hold' });
+            });
+            return;
+        }
         this._enqueue(() => this._stop());
     }
 
     public override destroy(): void {
+        this.keepAlive = false;
         // a pending worklet load must not delay the destroy
         this._destroyed.abort();
         this.pause();
@@ -259,6 +401,8 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase {
     private _enqueue(operation: () => void | Promise<void>): void {
         this._operations = this._operations.then(operation).catch(e => {
             Logger.error('WebAudio', `Audio Worklet operation failed: reason=${e}`);
+            // only the combined player acts on this (F-8); synth-only mode keeps today's behavior
+            (this.workletFailed as EventEmitterOfT<Error>).trigger(e instanceof Error ? e : new Error(String(e)));
         });
     }
 
@@ -281,28 +425,34 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase {
     }
 
     private async _start(ctx: AudioContext, pendingEvents: IAlphaSynthWorkerMessage[]): Promise<void> {
-        if (!(await this._loadWorklet(ctx))) {
-            // destroyed while loading
-            return;
-        }
-
-        // create a worklet node which will replace the silence with the generated audio
-        const worklet = new AudioWorkletNode(ctx, 'alphatab', {
-            numberOfOutputs: 1,
-            outputChannelCount: [2],
-            processorOptions: {
-                bufferTimeInMilliseconds: this._bufferTimeInMilliseconds
+        let worklet = this._worklet;
+        if (worklet) {
+            // kept alive while paused (mixing mode): resume it before the samples arrive
+            worklet.port.postMessage({ cmd: 'alphaSynth.output.resume' });
+        } else {
+            if (!(await this._loadWorklet(ctx))) {
+                // destroyed while loading
+                return;
             }
-        }) as AudioWorkletNode<IAlphaSynthWorkerMessage>;
-        this._worklet = worklet;
-        worklet.port.addEventListener('message', this._boundHandleMessage);
-        worklet.port.start();
 
-        // created and started together: base pause() must only ever see a started source
-        this.createSource(ctx);
-        this.source!.start(0);
-        this.source!.connect(worklet);
-        worklet.connect(ctx.destination);
+            // create a worklet node which will replace the silence with the generated audio
+            worklet = new AudioWorkletNode(ctx, 'alphatab', {
+                numberOfOutputs: 1,
+                outputChannelCount: [2],
+                processorOptions: {
+                    bufferTimeInMilliseconds: this._bufferTimeInMilliseconds
+                }
+            }) as AudioWorkletNode<IAlphaSynthWorkerMessage>;
+            this._worklet = worklet;
+            worklet.port.addEventListener('message', this._boundHandleMessage);
+            worklet.port.start();
+
+            // created and started together: base pause() must only ever see a started source
+            this.createSource(ctx);
+            this.source!.start(0);
+            this.source!.connect(worklet);
+            worklet.connect(this.destinationNode ?? ctx.destination);
+        }
 
         for (const e of pendingEvents) {
             worklet.port.postMessage(e);
@@ -335,6 +485,14 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase {
             case 'alphaSynth.output.sampleRequest':
                 this.onSampleRequest();
                 break;
+            case 'alphaSynth.output.mediaTimestamp':
+                (this.mediaTimestamp as EventEmitterOfT<MediaTimestampEventArgs>).trigger(
+                    new MediaTimestampEventArgs(data.frame, data.mediaTime)
+                );
+                break;
+            case 'alphaSynth.output.countInEnd':
+                (this.countInEnd as EventEmitterOfT<number>).trigger(data.frame);
+                break;
         }
     }
 
@@ -352,6 +510,17 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase {
         this._postWorkerMessage({
             cmd: 'alphaSynth.output.addSamples',
             samples: Environment.prepareForPostMessage(f)
+        });
+    }
+
+    public addMediaSamples(samples: Float32Array, chunk: MediaSampleChunk): void {
+        this._postWorkerMessage({
+            cmd: 'alphaSynth.output.addSamples',
+            samples: Environment.prepareForPostMessage(samples),
+            mediaStart: chunk.mediaStart,
+            mediaPerFrame: chunk.mediaPerFrame,
+            countInEnd: chunk.countInEnd,
+            countInFramesLeft: chunk.countInFramesLeft
         });
     }
 
