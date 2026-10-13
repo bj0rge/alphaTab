@@ -402,7 +402,12 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase i
         this._operations = this._operations.then(operation).catch(e => {
             Logger.error('WebAudio', `Audio Worklet operation failed: reason=${e}`);
             // only the combined player acts on this (F-8); synth-only mode keeps today's behavior
-            (this.workletFailed as EventEmitterOfT<Error>).trigger(e instanceof Error ? e : new Error(String(e)));
+            try {
+                (this.workletFailed as EventEmitterOfT<Error>).trigger(e instanceof Error ? e : new Error(String(e)));
+            } catch (listenerError) {
+                // a throwing listener must not reject the queue: every later operation (even destroy) would be skipped
+                Logger.error('WebAudio', `workletFailed listener threw: reason=${listenerError}`);
+            }
         });
     }
 
