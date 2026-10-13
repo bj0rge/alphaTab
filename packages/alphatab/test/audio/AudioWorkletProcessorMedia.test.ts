@@ -36,8 +36,11 @@ class ProcPort {
 
 const g = globalThis as any;
 let processorClass: any;
-g.registerProcessor = (_name: string, cls: any) => {
-    processorClass = cls;
+g.registerProcessor = (name: string, cls: any) => {
+    // init() registers more than one processor (the latency probe's tap too): keep the synthesizer's
+    if (name === 'alphatab') {
+        processorClass = cls;
+    }
 };
 g.AudioWorkletProcessor = class {
     public readonly port = new ProcPort();

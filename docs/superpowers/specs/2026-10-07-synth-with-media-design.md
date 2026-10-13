@@ -355,7 +355,7 @@ must also recreate it when `enableSynthesizerWithMedia` changes (via `updateSett
 | YouTube precision unknown | Best-effort, fitted clock, manual offset; verified by ear |
 | `createMediaElementSource` is one-shot per element and ties output to the `AudioContext` | Created once per output; device selection sets the context's sink (`MediaSynthPlayer.output`, §6.1), not the captured element's |
 | AudioContext suspended (autoplay policy) | Existing resume-on-gesture logic; the probe waits until the context runs |
-| Hidden probe playback in the background | Silent (never connected to the destination), ~6 s once per session; can be made lazy if needed |
+| Hidden probe playback in the background | Silent (its tap outputs silence; it is connected so that it is processed), ~6 s once per session; can be made lazy if needed |
 
 ## 14. Open items carried into the plan
 
