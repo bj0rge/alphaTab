@@ -137,6 +137,25 @@ export class MediaSyncLearnedValues {
 }
 
 /**
+ * Where to start the media and the synthesizer so that a start at `target` is heard together (§6.2).
+ * @target web
+ * @internal
+ */
+export class MediaStartPlan {
+    public speed: number = 1;
+    /** Where playback is meant to be heard from (media ms). */
+    public target: number = 0;
+    /** Where the media starts: the target, or PreRollMs earlier (never below 0) at speeds other than 1×. */
+    public mediaSeekTo: number = 0;
+    /** Where the synthesizer starts (media ms). */
+    public synthSeekTo: number = 0;
+    /** Delay the media's play() by this: the synthesizer is the slower one. */
+    public mediaDelayMs: number = 0;
+    /** At 1×: the synthesizer starts this far behind (a positive media latency); the settle nudge catches up. */
+    public catchUpGapMs: number = 0;
+}
+
+/**
  * Keeps the synthesizer on the media's clock (spec §6.2): compares the worklet's stamps with the media clock,
  * nudges the synthesizer's rate, re-syncs above a threshold, learns the start values, and plans the handshakes.
  * Pure logic.
@@ -168,6 +187,9 @@ export class MediaSyncController {
     private _resyncPending: boolean = false;
     private _learnResyncLead: boolean = false;
     private _learnMediaStartLatency: boolean = false;
+    private _learnStartLead: boolean = false;
+    private _catchUpGap: number = 0;
+    private _catchUpUntil: number = 0;
 
     /**
      * @param learned Where the learned start values live: the browser passes the page session's set for the media
@@ -221,6 +243,66 @@ export class MediaSyncController {
     public startedAfterHandOff(speed: number, learnMediaStartLatency: boolean): void {
         this._begin(speed);
         this._learnMediaStartLatency = learnMediaStartLatency;
+    }
+
+    /**
+     * Plans a start at media time `target` (§6.2 start handshake).
+     * @param mediaLatencyMs The media's time-stretch latency at this speed (probe value or guess), real ms.
+     */
+    public planStart(target: number, speed: number, mediaLatencyMs: number): MediaStartPlan {
+        const plan = new MediaStartPlan();
+        plan.speed = speed;
+        plan.target = target;
+        const latency = mediaLatencyMs * speed;
+        let synthBase: number;
+        if (speed === 1) {
+            // the synth starts at the target, never past it: a positive latency is caught up by the settle nudge
+            plan.mediaSeekTo = target;
+            synthBase = target + Math.min(0, latency);
+            plan.catchUpGapMs = Math.max(0, latency);
+        } else {
+            // Chrome's time-stretch distorts the first tens of ms above and below 1×: both start early, and the
+            // synth where the media will be heard (spikes 4 and 6). The media can't seek below its time 0.
+            plan.mediaSeekTo = Math.max(0, target - MediaSyncConstants.PreRollMs);
+            synthBase = plan.mediaSeekTo + latency;
+        }
+        // learned per speed; the straight-line guess before that (F-9a)
+        const lead = this.startLeads.get(speed);
+        plan.synthSeekTo = synthBase + Math.min(0, lead) * speed;
+        plan.mediaDelayMs = Math.max(0, lead);
+        return plan;
+    }
+
+    /**
+     * Both were told to play as planned: settle, and learn this speed's start lead from the first readings.
+     */
+    public started(plan: MediaStartPlan, learnStartLead: boolean): void {
+        this._begin(plan.speed);
+        this._learnStartLead = learnStartLead;
+        this._catchUpGap = plan.catchUpGapMs;
+        this._catchUpUntil = plan.catchUpGapMs > 0 ? this._settleUntil : 0;
+        // while the media start is delayed its readings mean nothing
+        this._ignoreUntil = this._time.now() + plan.mediaDelayMs;
+    }
+
+    /**
+     * The context time (s) at which to issue the media's play() so it is heard from the count-in's end (§6.2).
+     */
+    public handOffPlayTime(countInEndFrame: number, sampleRate: number, speed: number, preRollMediaMs: number): number {
+        return countInEndFrame / sampleRate - (this.mediaStartLatencies.get(speed) + preRollMediaMs / speed) / 1000;
+    }
+
+    /**
+     * The media pre-roll (media ms) for a start at `speed`.
+     */
+    public static preRoll(speed: number, countIn: boolean): number {
+        if (speed === 1) {
+            return 0;
+        }
+        if (countIn && speed < 1) {
+            return MediaSyncConstants.CountInPreRollBelow1xMs;
+        }
+        return MediaSyncConstants.PreRollMs;
     }
 
     public stopped(): void {
@@ -304,6 +386,11 @@ export class MediaSyncController {
         const hasAgreed = !Number.isNaN(agreed);
         let action = '';
 
+        if (this._learnStartLead && window.length >= 3) {
+            // this speed's start lead: the median of the first three readings after Play
+            this._learnStartLead = false;
+            this._learnStart(speed, [...window].sort((a, b) => a - b)[1]);
+        }
         if (this._learnMediaStartLatency && hasAgreed) {
             // the media started agreed/speed ms late (synth ahead): issue its play() that much earlier next time
             this._learnMediaStartLatency = false;
@@ -326,11 +413,24 @@ export class MediaSyncController {
             this.stats.resyncLeadMs = this._resyncLead;
         }
 
-        const threshold = settling ? this.settleThreshold(speed) : MediaSyncConstants.LockedResyncThresholdMs;
+        const catchingUp = this._catchUpGap > 0 && now < this._catchUpUntil;
+        if (catchingUp && hasAgreed && Math.abs(agreed) < 2) {
+            this._catchUpUntil = 0;
+        }
+        const threshold = settling
+            ? this.settleThreshold(speed) + (catchingUp ? this._catchUpGap : 0)
+            : MediaSyncConstants.LockedResyncThresholdMs;
         if (hasAgreed && Math.abs(agreed) > threshold) {
+            if (this._learnStartLead) {
+                // the start itself was off: learn it before the re-sync clears the readings
+                this._learnStartLead = false;
+                this._learnStart(speed, agreed);
+            }
             action = 'resync';
             this.resync();
         } else if (!hasAgreed && settling) {
+            action = 'wait';
+        } else if (this._learnStartLead) {
             action = 'wait';
         } else {
             action = this._nudge(drift, settling && speed === 1);
@@ -345,6 +445,9 @@ export class MediaSyncController {
         this._resyncPending = false;
         this._learnResyncLead = false;
         this._learnMediaStartLatency = false;
+        this._learnStartLead = false;
+        this._catchUpGap = 0;
+        this._catchUpUntil = 0;
         this._ignoreUntil = 0;
         this._settleUntil = this._time.now() + MediaSyncConstants.SettleDurationMs;
         // followMedia() resets the synthesizer's correction at every start
@@ -378,6 +481,17 @@ export class MediaSyncController {
         this._correction = correction;
         this._synth.setRateCorrection(correction);
         return 'nudge';
+    }
+
+    private _learnStart(speed: number, offset: number): void {
+        MediaSyncController._learnFromStart(
+            this.startLeads,
+            this._learned.lastStartLeads,
+            speed,
+            this.startLeads.get(speed) - (offset + this._catchUpGap) / speed,
+            MediaSyncConstants.StartLeadMinMs,
+            MediaSyncConstants.StartLeadMaxMs
+        );
     }
 
     /**
