@@ -14,6 +14,7 @@ import { MediaLatencyProbe } from '@coderline/alphatab/platform/javascript/Media
 import {
     MediaSyncController,
     MediaSyncLearnedValues,
+    type MediaStartPlan,
     type MediaSyncStats
 } from '@coderline/alphatab/platform/javascript/MediaSyncController';
 import { MediaSynthOutput } from '@coderline/alphatab/platform/javascript/MediaSynthOutput';
@@ -217,6 +218,10 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _playbackRange: PlaybackRange | null = null;
     private _isLooping: boolean = false;
     private _syncPoints: BackingTrackSyncPoint[] = [];
+
+    private _handshake: number = 0;
+    private _holdBefore: number = -1;
+    private _mediaDelayTimer: number = 0;
 
     private _probeQueue: number[] = [];
     private _probing: boolean = false;
@@ -576,12 +581,20 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     public set playbackSpeed(value: number) {
+        if (value === this.playbackSpeed) {
+            // a second handshake would seek the media again and re-sync, cutting the synth's sounding notes
+            return;
+        }
         this._media.playbackSpeed = value;
         const speed = this._media.playbackSpeed;
         this._synth.playbackSpeed = speed;
         this._clock.speed = speed;
         this._queueProbe(speed, true);
         this._probeNext();
+        if (this._state === PlayerState.Playing && this._isMixing) {
+            // both at the new speed with its latency: re-sync and settle (§6.2; spike 11)
+            this.controller.speedChanged(speed);
+        }
     }
 
     public get playbackRange(): PlaybackRange | null {
@@ -608,7 +621,16 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     public playOneTimeMidiFile(midi: MidiFile): void {
-        this._media.playOneTimeMidiFile(midi);
+        if (!this._isMixing) {
+            // the media player's own behavior, as today (§8)
+            this._media.playOneTimeMidiFile(midi);
+            return;
+        }
+        // pause both (the app sees Paused); the synth leaves follow mode and plays it on its own clock; the next
+        // Play follows the media again through the start handshake (§6.1, spike 7)
+        this.pause();
+        this._synth.followMedia(false, this._mediaDuration, this._syncPoints);
+        this._synth.playOneTimeMidiFile(midi);
     }
 
     private _setState(state: PlayerState, stopped: boolean): void {
@@ -618,24 +640,82 @@ export class MediaSynthPlayer implements IAlphaSynth {
         );
     }
 
+    /**
+     * Starts from the media's position (§6.2 start handshake).
+     */
     private _startPlayback(): void {
         const speed = this.playbackSpeed;
         this._queueProbe(speed, true);
         this._probeNext();
-        this._playMedia();
+        if (!this._isMixing) {
+            this._playMedia();
+            return;
+        }
+        this._sendFollowConfig();
+        this._runStart(this.controller.planStart(this._clock.position, speed, this._mediaLatency(speed)), true);
+    }
+
+    private _runStart(plan: MediaStartPlan, learnStartLead: boolean): void {
+        // the cursor stays at the start position while the media pre-rolls
+        this._holdBefore = this._media.timePosition;
+        // ends a one-time MIDI the synth may still play (spike 7)
+        this._synth.pause();
+        if (plan.mediaSeekTo !== this._clock.position) {
+            this._media.seekMediaTo(plan.mediaSeekTo);
+        }
+        const handshake = this._handshake;
+        this._clock.whenSeeked(() => {
+            if (handshake !== this._handshake) {
+                // a pause or another handshake came first
+                return;
+            }
+            this._synth.seekToMediaTime(plan.synthSeekTo);
+            this._synth.play();
+            if (plan.mediaDelayMs > 0) {
+                this._mediaDelayTimer = this._timer.setTimeout(() => {
+                    this._mediaDelayTimer = 0;
+                    this._playMedia();
+                }, plan.mediaDelayMs);
+            } else {
+                this._playMedia();
+            }
+            this.controller.started(plan, learnStartLead);
+        });
     }
 
     private _seek(apply: () => void): void {
+        if (this._state !== PlayerState.Playing) {
+            apply();
+            return;
+        }
+        // pause both, seek, restart through the start handshake: no count-in, no stateChanged (§6.2)
+        this._interrupt();
         apply();
+        this._startPlayback();
     }
 
     /**
-     * Stops whatever is in flight; both end paused.
+     * Stops whatever a handshake has in flight; both end paused.
      */
     private _interrupt(): void {
+        this._handshake++;
+        this._timer.clearTimeout(this._mediaDelayTimer);
+        this._mediaDelayTimer = 0;
+        this._holdBefore = -1;
         this.controller.stopped();
         this._pauseMedia();
         this._synth.pause();
+    }
+
+    /**
+     * Both play: the synthesizer is ready and nothing failed.
+     */
+    private get _isMixing(): boolean {
+        return !this._isMediaOnly && this._synthReadyForPlayback;
+    }
+
+    private _mediaLatency(speed: number): number {
+        return this._externalClock ? 0 : this._probeLatencies.get(speed);
     }
 
     private _playMedia(): void {
@@ -657,11 +737,24 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     private _onMediaPosition(e: PositionChangedEventArgs): void {
+        if (this._holdBefore >= 0) {
+            if (e.currentTime < this._holdBefore - 1) {
+                // the media's pre-roll: keep the cursor at the start position (§6.1)
+                return;
+            }
+            this._holdBefore = -1;
+        }
         (this.positionChanged as EventEmitterOfT<PositionChangedEventArgs>).trigger(e);
     }
 
     private _onMediaFinished(): void {
+        // the media reached the song's end by itself (no range, not looping): finished, and both stop, as today
         (this.finished as EventEmitter).trigger();
+        if (this._state === PlayerState.Playing) {
+            this._interrupt();
+            this._synth.stop();
+            this._setState(PlayerState.Paused, true);
+        }
     }
 
     // ---- delegation ----
