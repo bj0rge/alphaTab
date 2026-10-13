@@ -2,7 +2,7 @@
  * The mixing graph's wiring and the limiter's values (F-13); the sound itself is checked with spike 8's script.
  * @target web
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WebAudioMixGraph } from '@coderline/alphatab/platform/javascript/WebAudioMixGraph';
 
 class FakeParam {
@@ -138,6 +138,32 @@ describe('WebAudioMixGraphTests', () => {
         expect(graph.heardContextTime()).toBeCloseTo(1.9, 1);
     });
 
+    it('heard-context-time-moves-on-from-the-output-timestamp', () => {
+        // the timestamp is a snapshot: the heard context time is its contextTime plus the real time since
+        const { context, graph } = create();
+        const now = vi.spyOn(performance, 'now').mockReturnValue(5000);
+        try {
+            context.outputTimestamp = { contextTime: 1.9, performanceTime: 4750 };
+            expect(graph.heardContextTime()).toBeCloseTo(1.9 + 0.25, 9);
+        } finally {
+            now.mockRestore();
+        }
+    });
+
+    it('heard-context-time-ignores-the-zero-timestamp-of-a-context-that-has-not-rendered-yet', () => {
+        // Web Audio: until the graph has processed a block, getOutputTimestamp() has both members zero
+        const { context, graph } = create();
+        context.outputTimestamp = { contextTime: 0, performanceTime: 0 };
+        expect(graph.heardContextTime()).toBeCloseTo(2 - 0.02, 9);
+    });
+
+    it('heard-context-time-keeps-a-real-timestamp-whose-context-time-is-still-zero', () => {
+        // the first rendered block: contextTime 0 but a real performanceTime is a valid timestamp
+        const { context, graph } = create();
+        context.outputTimestamp = { contextTime: 0, performanceTime: performance.now() };
+        expect(graph.heardContextTime()).toBeCloseTo(0, 1);
+    });
+
     it('when-running-waits-for-the-context', () => {
         const { context, graph } = create();
         context.state = 'suspended';
@@ -149,5 +175,20 @@ describe('WebAudioMixGraphTests', () => {
         expect(ran).toBe(1);
         graph.whenRunning(() => ran++);
         expect(ran).toBe(2);
+    });
+
+    it('when-running-runs-the-action-once', () => {
+        const { context, graph } = create();
+        context.state = 'suspended';
+        let ran = 0;
+        graph.whenRunning(() => ran++);
+        context.setState('interrupted');
+        expect(ran).toBe(0);
+        context.setState('running');
+        expect(ran).toBe(1);
+        // a later resume must not run it again
+        context.setState('suspended');
+        context.setState('running');
+        expect(ran).toBe(1);
     });
 });
