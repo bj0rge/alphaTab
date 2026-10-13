@@ -167,4 +167,13 @@ export class ExternalMediaPlayer extends BackingTrackPlayer {
     constructor(bufferTimeInMilliseconds: number) {
         super(new ExternalMediaSynthOutput(), bufferTimeInMilliseconds);
     }
+
+    /**
+     * The handler keeps getting masterVolume alone: an app that writes its player's volume back into
+     * masterVolume (alphaTab's external-media sample does, on volumechange) would otherwise drive it toward 0
+     * (§7, spike 9 §3).
+     */
+    protected override applyMediaVolume(): void {
+        (this.output as IBackingTrackSynthOutput).masterVolume = this.masterVolume;
+    }
 }

@@ -165,7 +165,20 @@ export class BackingTrackPlayer extends AlphaSynthBase {
 
     protected override updateMasterVolume(value: number): void {
         super.updateMasterVolume(value);
-        this._backingTrackOutput.masterVolume = value;
+        this.applyMediaVolume();
+    }
+
+    protected override updateBackingTrackVolume(_value: number): void {
+        this.applyMediaVolume();
+    }
+
+    /**
+     * The media's own volume: masterVolume × backingTrackVolume (§7), so it also works without mixing. An
+     * `<audio>` element's volume stops at 1 (the browser throws `IndexSizeError` above it), so a level above 1
+     * needs mixing, where the gains apply it.
+     */
+    protected applyMediaVolume(): void {
+        this._backingTrackOutput.masterVolume = Math.min(1, this.masterVolume * this.backingTrackVolume);
     }
 
     protected override updatePlaybackSpeed(value: number): void {

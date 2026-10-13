@@ -202,6 +202,33 @@ export class AlphaSynthBase implements IAlphaSynth {
         this._countInVolume = value;
     }
 
+    private _backingTrackVolume: number = 1;
+    private _synthVolume: number = 1;
+
+    public get backingTrackVolume(): number {
+        return this._backingTrackVolume;
+    }
+
+    public set backingTrackVolume(value: number) {
+        value = Math.max(value, SynthConstants.MinVolume);
+        this._backingTrackVolume = value;
+        this.updateBackingTrackVolume(value);
+    }
+
+    /**
+     * A synthesizer alone has no backing track.
+     */
+    protected updateBackingTrackVolume(_value: number): void {}
+
+    public get synthVolume(): number {
+        return this._synthVolume;
+    }
+
+    public set synthVolume(value: number) {
+        // a synthesizer alone ignores it: masterVolume already scales it
+        this._synthVolume = Math.max(value, SynthConstants.MinVolume);
+    }
+
     public get midiEventsPlayedFilter(): MidiEventType[] {
         return Array.from(this.midiEventsPlayedFilterSet);
     }

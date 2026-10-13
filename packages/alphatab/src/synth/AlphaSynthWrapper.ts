@@ -34,6 +34,8 @@ import { SynthConstants } from '@coderline/alphatab/synth/SynthConstants';
 export class AlphaSynthWrapper implements IAlphaSynth {
     // relevant state information we want to remember when switching between player instances
     private _masterVolume: number = 1;
+    private _backingTrackVolume: number = 1;
+    private _synthVolume: number = 1;
     private _metronomeVolume: number = 0;
     private _countInVolume: number = 0;
     private _playbackSpeed: number = 1;
@@ -131,6 +133,8 @@ export class AlphaSynthWrapper implements IAlphaSynth {
             // restore state on new player
             if (this.isReady) {
                 value.masterVolume = this._masterVolume;
+                value.backingTrackVolume = this._backingTrackVolume;
+                value.synthVolume = this._synthVolume;
                 value.metronomeVolume = this._metronomeVolume;
                 value.countInVolume = this._countInVolume;
                 value.playbackSpeed = this._playbackSpeed;
@@ -141,6 +145,8 @@ export class AlphaSynthWrapper implements IAlphaSynth {
                 newUnregister.push(
                     value.ready.on(() => {
                         value.masterVolume = this._masterVolume;
+                        value.backingTrackVolume = this._backingTrackVolume;
+                        value.synthVolume = this._synthVolume;
                         value.metronomeVolume = this._metronomeVolume;
                         value.countInVolume = this._countInVolume;
                         value.playbackSpeed = this._playbackSpeed;
@@ -190,6 +196,30 @@ export class AlphaSynthWrapper implements IAlphaSynth {
         this._masterVolume = value;
         if (this._instance) {
             this._instance!.masterVolume = value;
+        }
+    }
+
+    public get backingTrackVolume(): number {
+        return this._backingTrackVolume;
+    }
+
+    public set backingTrackVolume(value: number) {
+        value = Math.max(value, SynthConstants.MinVolume);
+        this._backingTrackVolume = value;
+        if (this._instance) {
+            this._instance.backingTrackVolume = value;
+        }
+    }
+
+    public get synthVolume(): number {
+        return this._synthVolume;
+    }
+
+    public set synthVolume(value: number) {
+        value = Math.max(value, SynthConstants.MinVolume);
+        this._synthVolume = value;
+        if (this._instance) {
+            this._instance.synthVolume = value;
         }
     }
 

@@ -128,6 +128,26 @@ export class AlphaSynthWebWorkerApi implements IMediaSynth {
         });
     }
 
+    private _backingTrackVolume: number = 1;
+    private _synthVolume: number = 1;
+
+    // a synthesizer alone ignores both: it has no backing track, and masterVolume already scales it
+    public get backingTrackVolume(): number {
+        return this._backingTrackVolume;
+    }
+
+    public set backingTrackVolume(value: number) {
+        this._backingTrackVolume = Math.max(value, SynthConstants.MinVolume);
+    }
+
+    public get synthVolume(): number {
+        return this._synthVolume;
+    }
+
+    public set synthVolume(value: number) {
+        this._synthVolume = Math.max(value, SynthConstants.MinVolume);
+    }
+
     public get midiEventsPlayedFilter(): MidiEventType[] {
         return this._midiEventsPlayedFilter;
     }
