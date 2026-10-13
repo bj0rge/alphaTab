@@ -245,32 +245,41 @@ describe('FollowMediaSynthTests', () => {
         expect(chunks[1].mediaStart).toBeCloseTo(chunks[0].mediaEnd, 9);
     });
 
-    it('seek-to-media-time-restarts-the-stamps', async () => {
-        const { midi, syncPoints } = await loadSyncPointSong();
-        const { output, synth } = createFollowingSynth(midi, syncPoints, 1, 0);
-        synth.play();
-        output.request();
-        const resets = output.resetCount;
-        synth.seekToMediaTime(20000);
-        expect(output.resetCount).toBe(resets + 1);
-        output.request();
-        const chunks = output.stampedChunks;
-        expect(chunks[chunks.length - 1].mediaStart).toBe(20000);
-        const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer;
-        expect(synth.timePosition).toBeCloseTo(oracle.mainMidiTimeFromMediaTime(20000, MediaDuration), 6);
-    });
+    for (const speed of [1, 1.5]) {
+        it(`seek-to-media-time-restarts-the-stamps-${speed}x`, async () => {
+            const { midi, syncPoints } = await loadSyncPointSong();
+            const { output, synth } = createFollowingSynth(midi, syncPoints, speed, 0);
+            synth.play();
+            output.request();
+            const resets = output.resetCount;
+            synth.seekToMediaTime(20000);
+            expect(output.resetCount).toBe(resets + 1);
+            output.request();
+            const chunks = output.stampedChunks;
+            expect(chunks[chunks.length - 1].mediaStart).toBe(20000);
+            // media 20000 is off the identity mapping of the sync points (it maps to 21990.958 ms of song time); the
+            // position is that song time divided by the speed
+            const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, speed).sequencer;
+            expect(synth.timePosition).toBeCloseTo(oracle.mainMidiTimeFromMediaTime(20000, MediaDuration) / speed, 6);
+        });
+    }
 
     it('played-position-follows-the-played-frames', async () => {
+        // from media 20000 (off the identity mapping of the sync points) at 1.5x (the speed matters), with the played
+        // frames running from the first chunk into the second
+        const speed = 1.5;
+        const startMedia = 20000;
+        const playedFrames = 3000;
         const { midi, syncPoints } = await loadSyncPointSong();
-        const { output, synth } = createFollowingSynth(midi, syncPoints, 1, 0);
+        const { output, synth } = createFollowingSynth(midi, syncPoints, speed, startMedia);
         synth.play();
         output.request();
-        output.played(1000);
-        const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer;
-        expect(synth.timePosition).toBeCloseTo(
-            oracle.mainMidiTimeFromMediaTime((1000 * 1000) / 44100, MediaDuration),
-            6
-        );
+        output.request();
+        expect(output.stampedChunks[0].frames).toBeLessThan(playedFrames);
+        output.played(playedFrames);
+        const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, speed).sequencer;
+        const playedMedia = startMedia + playedFrames * (1000 / 44100) * speed;
+        expect(synth.timePosition).toBeCloseTo(oracle.mainMidiTimeFromMediaTime(playedMedia, MediaDuration) / speed, 6);
     });
 
     it('speed-change-while-following-keeps-the-media-position', async () => {
