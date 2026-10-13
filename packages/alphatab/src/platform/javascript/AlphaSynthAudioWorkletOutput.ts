@@ -75,6 +75,15 @@ declare let currentFrame: number;
  * @internal
  */
 export class AlphaSynthWebWorklet {
+    /**
+     * The latency probe's tap: a sample above this starts a beep (spec §6.4).
+     */
+    public static readonly ProbeTapThreshold: number = 0.25;
+    /**
+     * Frames to wait after an onset (50 ms at 48 kHz): one onset per beep, also at 2×.
+     */
+    public static readonly ProbeTapCooldownFrames: number = 2400;
+
     private static _isRegistered = false;
     public static init() {
         if (AlphaSynthWebWorklet._isRegistered) {
@@ -264,6 +273,35 @@ export class AlphaSynthWebWorklet {
                         }
                         this._requestedBufferCount += halfBufferCount;
                     }
+                }
+            }
+        );
+
+        registerProcessor(
+            'alphatab-probe-tap',
+            class AlphaSynthProbeTapProcessor extends AudioWorkletProcessor {
+                private _cooldown: number = 0;
+
+                public override process(
+                    inputs: Float32Array[][],
+                    _outputs: Float32Array[][],
+                    _parameters: Record<string, Float32Array>
+                ): boolean {
+                    const channel = inputs.length > 0 && inputs[0].length > 0 ? inputs[0][0] : undefined;
+                    if (channel) {
+                        for (let i = 0; i < channel.length; i++) {
+                            if (this._cooldown > 0) {
+                                this._cooldown--;
+                                continue;
+                            }
+                            if (Math.abs(channel[i]) > AlphaSynthWebWorklet.ProbeTapThreshold) {
+                                this.port.postMessage({ cmd: 'alphaSynth.probe.onset', frame: currentFrame + i });
+                                this._cooldown = AlphaSynthWebWorklet.ProbeTapCooldownFrames;
+                            }
+                        }
+                    }
+                    // the outputs stay zero: the tap is connected so it is processed, and is never heard (G-7)
+                    return true;
                 }
             }
         );

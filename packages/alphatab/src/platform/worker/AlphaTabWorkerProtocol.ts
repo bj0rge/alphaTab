@@ -149,7 +149,10 @@ export type IAlphaSynthWorkerMessage =
     | { cmd: 'alphaSynth.output.pause' }
     | { cmd: 'alphaSynth.output.stop' }
     | { cmd: 'alphaSynth.output.destroy' }
-    | { cmd: 'alphaSynth.output.resetSamples' };
+    | { cmd: 'alphaSynth.output.resetSamples' }
+
+    /* tap -> probe */
+    | { cmd: 'alphaSynth.probe.onset'; frame: number };
 
 /**
  * @internal
