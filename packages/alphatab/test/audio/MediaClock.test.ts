@@ -114,6 +114,18 @@ describe('ExternalMediaClockTests', () => {
         expect(clock.mediaTimeAt(1.05 * 48000)).toBeCloseTo(5000 + 1050, 0);
     });
 
+    it('a-late-update-off-the-centre-does-not-tilt-the-line', () => {
+        // The test above puts the late update at the centre of the updates, where its pairwise slopes cancel out (a
+        // mean of them would pass too). Near the newest end they don't cancel: a mean slope would tilt the line by
+        // about 10 ms per second and miss the true line by about 6 ms at 1.05 s. The median slope is not moved at all.
+        const time = new FakeHeardTime();
+        const clock = new ExternalMediaClock(time, () => 0);
+        clock.setPlaying(true);
+        // the true line is 5000 + 1000 * t; the update at 0.95 s reports its position 40 ms late
+        feed(clock, time, 0, 1, t => 5000 + (Math.abs(t - 0.95) < 1e-6 ? t * 1000 - 40 : t * 1000));
+        expect(clock.mediaTimeAt(1.05 * 48000)).toBeCloseTo(5000 + 1050, 0);
+    });
+
     it('no-time-before-three-samples-over-100-ms', () => {
         const time = new FakeHeardTime();
         const clock = new ExternalMediaClock(time, () => 0);
