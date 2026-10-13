@@ -669,6 +669,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
                 // a pause or another handshake came first
                 return;
             }
+            if (!this._isMixing) {
+                // the synthesizer failed while the media seeked: the media starts alone, without waiting for it
+                this._playMedia();
+                return;
+            }
             this._synth.seekToMediaTime(plan.synthSeekTo);
             this._synth.play();
             if (plan.mediaDelayMs > 0) {
@@ -817,6 +822,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     public loadSoundFont(data: Uint8Array, append: boolean): void {
+        if (this._state === PlayerState.Playing) {
+            // loading a SoundFont pauses the synthesizer, and the app of a synth-only player sees Paused (it presses Play
+            // again once the SoundFont is loaded): pause both here, so the synthesizer is not left silent under Playing
+            this.pause();
+        }
         if (!this._isMediaOnly) {
             // ready again when the worker says so, once per SoundFont: the app re-sends the channel volumes on it
             this._synthReadyForPlayback = false;

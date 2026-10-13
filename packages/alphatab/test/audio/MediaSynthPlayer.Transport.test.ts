@@ -2,8 +2,10 @@
  * The combined player's start, seek and speed handshakes (spec §6.2).
  * @target web
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Logger } from '@coderline/alphatab/Logger';
 import { MediaSyncLearnedValues } from '@coderline/alphatab/platform/javascript/MediaSyncController';
+import { PlayerState } from '@coderline/alphatab/synth/PlayerState';
 import { flush, MediaSynthHarness } from 'test/audio/MediaSyncFakes';
 
 async function playing(at: number = 5000, speed: number = 1): Promise<MediaSynthHarness> {
@@ -199,5 +201,116 @@ describe('MediaSynthPlayerTransportTests', () => {
         h.timer.advance(100);
         expect(h.mediaOutput!.isPlaying).toBe(false);
         expect(h.timer.pending).toBe(0);
+    });
+
+    it('a-pause-while-the-media-seeks-cancels-the-start', async () => {
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.mediaOutput!.currentTime = 5000;
+        h.backingClock!.isSeeking = true; // the <audio> is still seeking when Play comes
+        h.player.play();
+        h.player.pause();
+        h.backingClock!.finishSeek();
+        expect(h.synth.count('play')).toBe(0);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.player.controller.isActive).toBe(false);
+    });
+
+    it('a-seek-while-the-media-seeks-runs-only-the-last-start', async () => {
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.mediaOutput!.currentTime = 5000;
+        h.backingClock!.isSeeking = true;
+        h.player.play();
+        h.player.timePosition = 20000;
+        h.backingClock!.finishSeek();
+        expect(h.synth.count('play')).toBe(1);
+        expect(h.synth.seeks.length).toBe(1);
+        expect(h.synth.lastSeek()).toBeCloseTo(h.mediaOutput!.currentTime, 3);
+    });
+
+    it('a-seek-while-paused-starts-nothing', async () => {
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        const calls = h.synth.calls.length;
+        h.player.timePosition = 10000;
+        h.player.tickPosition = 1920;
+        expect(h.synth.calls.slice(calls)).toEqual([]);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.states).toEqual([]);
+    });
+
+    it('a-start-at-1x-does-not-seek-the-media-again', async () => {
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.mediaOutput!.currentTime = 5000;
+        const seeks = h.mediaOutput!.seekTimes.length;
+        h.player.play();
+        expect(h.mediaOutput!.seekTimes.length).toBe(seeks);
+    });
+
+    it('a-stop-during-the-media-pre-roll-moves-the-cursor-to-the-start', async () => {
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.probeLatencies.set(0.5, 60);
+        h.player.playbackSpeed = 0.5;
+        h.player.timePosition = 10000;
+        h.player.play(); // the cursor is held at the start position
+        h.positions.length = 0;
+        h.player.stop();
+        expect(h.positions[h.positions.length - 1]).toBe(0);
+    });
+
+    it('a-one-time-midi-in-the-media-only-fallback-is-the-media-players-own', async () => {
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        const midi = await h.loadSong(false);
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        warning.mockRestore();
+        const calls = h.synth.calls.length;
+        h.player.playOneTimeMidiFile(midi);
+        expect(h.synth.calls.slice(calls)).toEqual([]);
+    });
+
+    it('a-soundfont-reload-while-playing-pauses-both', async () => {
+        // loading a SoundFont pauses the synthesizer, and the app of a synth-only player sees Paused: the combined
+        // player pauses both as well, instead of playing the media on with a silent synthesizer
+        const h = await playing(5000);
+        h.player.loadSoundFont(new Uint8Array(0), false);
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.synth.state).toBe(PlayerState.Paused);
+        expect(h.player.controller.isActive).toBe(false);
+        expect(h.synth.calls.slice(-2)).toEqual(['pause', 'loadSoundFont']);
+        h.synth.becomeReadyForPlayback(); // the worker has the SoundFont
+        h.player.play();
+        expect(h.synth.calls.slice(-4)).toEqual([
+            'followMedia:true',
+            'pause',
+            `seek:${h.synth.lastSeek()}`,
+            'play:countIn=0'
+        ]);
+        expect(h.synth.state).toBe(PlayerState.Playing);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        expect(h.player.controller.isActive).toBe(true);
+    });
+
+    it('a-synth-failure-while-the-media-seeks-starts-the-media-alone', async () => {
+        // the synthesizer is lost between Play and the end of the media's seek: only the media's half of the start runs
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.mediaOutput!.currentTime = 5000;
+        h.backingClock!.isSeeking = true; // the <audio> is still seeking when Play comes
+        h.player.play();
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        warning.mockRestore();
+        const seeks = h.synth.seeks.length;
+        h.backingClock!.finishSeek();
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        expect(h.synth.count('play')).toBe(0);
+        expect(h.synth.seeks.length).toBe(seeks);
+        expect(h.player.controller.isActive).toBe(false);
+        expect(h.states).toEqual(['Playing']);
     });
 });
