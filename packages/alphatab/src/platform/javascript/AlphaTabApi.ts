@@ -14,6 +14,7 @@ import type { SettingsJson } from '@coderline/alphatab/generated/SettingsJson';
 import { PlayerMode } from '@coderline/alphatab/PlayerSettings';
 import { Logger } from '@coderline/alphatab/Logger';
 import { FileLoadError } from '@coderline/alphatab/FileLoadError';
+import type { AlphaSynthWrapper } from '@coderline/alphatab/synth/AlphaSynthWrapper';
 
 /**
  * @target web
@@ -285,7 +286,10 @@ export class AlphaTabApi extends AlphaTabApiBase<SettingsJson | Settings> {
         };
         request.onerror = e => {
             Logger.error('AlphaSynth', `Loading failed: ${(e as any).message}`);
-            (player.soundFontLoadFailed as EventEmitterOfT<Error>).trigger(
+            // raised on the instance so a combined player can fall back to the media alone (spike 10 §3);
+            // the wrapper forwards it to the app as before
+            const instance = (player as AlphaSynthWrapper).instance ?? player;
+            (instance.soundFontLoadFailed as EventEmitterOfT<Error>).trigger(
                 new FileLoadError((e as any).message, request)
             );
         };
