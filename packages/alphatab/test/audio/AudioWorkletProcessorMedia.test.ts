@@ -1,8 +1,8 @@
 /**
- * Drives the worklet processor registered by `AlphaSynthWebWorklet.init()` with a simulated AudioWorklet scope
+ * Drives the worklet processors registered by `AlphaSynthWebWorklet.init()` with a simulated AudioWorklet scope
  * (`registerProcessor`, `AudioWorkletProcessor`, `sampleRate`, `currentFrame`): media stamps, count-in end, hold and
- * request accounting (spec §5). The scope globals live at module level, which is safe because vitest isolates each
- * test file.
+ * request accounting (spec §5), and the latency probe's tap (spec §6.4). The scope globals live at module level,
+ * which is safe because vitest isolates each test file.
  * @target web
  */
 import { describe, expect, it } from 'vitest';
@@ -36,10 +36,13 @@ class ProcPort {
 
 const g = globalThis as any;
 let processorClass: any;
+let probeTapClass: any;
 g.registerProcessor = (name: string, cls: any) => {
-    // init() registers more than one processor (the latency probe's tap too): keep the synthesizer's
+    // init() registers more than one processor: each is kept by its name
     if (name === 'alphatab') {
         processorClass = cls;
+    } else if (name === 'alphatab-probe-tap') {
+        probeTapClass = cls;
     }
 };
 g.AudioWorkletProcessor = class {
@@ -227,5 +230,71 @@ describe('processor harness', () => {
         h.send({ cmd: 'alphaSynth.output.resetSamples' });
         expect(h.proc._circularBuffer.count).toBe(0);
         expect(h.proc._markers.bufferedFrames).toBe(0);
+    });
+});
+
+describe('probe tap processor', () => {
+    // The probe's beeps as the tap hears them at `speed` (the time-stretch keeps the pitch): a 3 ms burst of a 2 kHz
+    // sine with a 0.6 peak every 125 ms, at 48 kHz, made shorter and closer by the speed. Its first sample above the
+    // tap's 0.25 is the third: 0.6 * sin(30 degrees) = 0.3, after 0 and 0.6 * sin(15 degrees) = 0.155.
+    const firstLoudSample = 2;
+
+    function beepTrain(speed: number): { signal: Float32Array; starts: number[] } {
+        const beepFrames = 144 / speed;
+        const starts = [1, 2, 3, 4].map(n => (n * 6000) / speed);
+        const signal = new Float32Array(Math.ceil((starts[3] + beepFrames) / 128) * 128);
+        for (const start of starts) {
+            for (let k = 0; k < beepFrames; k++) {
+                signal[start + k] = 0.6 * Math.sin((2 * Math.PI * 2000 * k) / 48000);
+            }
+        }
+        return { signal, starts };
+    }
+
+    // Runs the signal through the processor in blocks of 128 frames with zeroed outputs, as the browser does;
+    // returns the loudest output sample.
+    function feed(proc: any, signal: Float32Array, startFrame: number): number {
+        let outputPeak = 0;
+        for (let offset = 0; offset < signal.length; offset += 128) {
+            g.currentFrame = startFrame + offset;
+            const output = [new Float32Array(128), new Float32Array(128)];
+            expect(proc.process([[signal.subarray(offset, offset + 128)]], [output], {})).toBe(true);
+            for (const channel of output) {
+                outputPeak = channel.reduce((peak, v) => Math.max(peak, Math.abs(v)), outputPeak);
+            }
+        }
+        return outputPeak;
+    }
+
+    function onsetFrames(proc: any): number[] {
+        return (proc.port as ProcPort).of('alphaSynth.probe.onset').map(m => m.frame);
+    }
+
+    for (const speed of [1, 2]) {
+        it(`one onset per beep, at its first loud sample (${speed}x)`, () => {
+            // at 2x the beeps are 1.5 ms long and 62.5 ms apart: closer, but still further apart than the cooldown
+            const { signal, starts } = beepTrain(speed);
+            const proc = new probeTapClass();
+            feed(proc, signal, 100000);
+            expect(onsetFrames(proc)).toEqual(starts.map(start => 100000 + start + firstLoudSample));
+        });
+    }
+
+    it('a loud block inside the cooldown reports nothing; after the 50 ms cooldown the next loud sample does', () => {
+        const proc = new probeTapClass();
+        const cooldownFrames = 2400; // 50 ms at 48 kHz
+        const loud = (blocks: number) => new Float32Array(blocks * 128).fill(0.9);
+        feed(proc, loud(1), 1000);
+        feed(proc, loud(1), 1128); // the next block, inside the cooldown
+        expect(onsetFrames(proc)).toEqual([1000]);
+        // loud to the end: an onset, the cooldown's frames skipped, then the next loud sample reports again
+        feed(proc, loud(45), 1256);
+        expect(onsetFrames(proc)).toEqual([1000, 1000 + cooldownFrames + 1, 1000 + 2 * (cooldownFrames + 1)]);
+    });
+
+    it('never writes to its outputs: the tap is connected so it is processed, and is never heard', () => {
+        const proc = new probeTapClass();
+        expect(feed(proc, new Float32Array(4 * 128).fill(0.9), 0)).toBe(0);
+        expect(onsetFrames(proc)[0]).toBe(0); // it did hear the loud input
     });
 });
