@@ -11,11 +11,12 @@ import type {
     IAlphaTabWorkerGlobalScope
 } from '@coderline/alphatab/platform/worker/AlphaTabWorkerProtocol';
 import type { ISynthOutput, ISynthOutputDevice } from '@coderline/alphatab/synth/ISynthOutput';
+import type { IMediaSampleOutput, MediaSampleChunk } from '@coderline/alphatab/synth/MediaSampleOutput';
 
 /**
  * @internal
  */
-export class AlphaSynthWorkerSynthOutput implements ISynthOutput {
+export class AlphaSynthWorkerSynthOutput implements ISynthOutput, IMediaSampleOutput {
     // this value is initialized by the alphaSynth WebWorker wrapper
     // that also includes the alphaSynth library into the worker.
     public static preferredSampleRate: number = 0;
@@ -62,6 +63,17 @@ export class AlphaSynthWorkerSynthOutput implements ISynthOutput {
         this._main.postMessage({
             cmd: 'alphaSynth.output.addSamples',
             samples: Environment.prepareForPostMessage(samples)
+        });
+    }
+
+    public addMediaSamples(samples: Float32Array, chunk: MediaSampleChunk): void {
+        this._main.postMessage({
+            cmd: 'alphaSynth.output.addSamples',
+            samples: Environment.prepareForPostMessage(samples),
+            mediaStart: chunk.mediaStart,
+            mediaPerFrame: chunk.mediaPerFrame,
+            countInEnd: chunk.countInEnd,
+            countInFramesLeft: chunk.countInFramesLeft
         });
     }
 

@@ -87,6 +87,14 @@ export type IAlphaSynthWorkerMessage =
     | { cmd: 'alphaSynth.resetChannelStates' }
     | { cmd: 'alphaSynth.destroy' }
     | { cmd: 'alphaSynth.applyTranspositionPitches'; transpositionPitches: Map<number, number> }
+    | {
+          cmd: 'alphaSynth.followMedia';
+          enabled: boolean;
+          mediaDuration: number;
+          syncPoints: BackingTrackSyncPoint[];
+      }
+    | { cmd: 'alphaSynth.seekToMediaTime'; mediaTime: number }
+    | { cmd: 'alphaSynth.setRateCorrection'; factor: number }
     /* worker -> main */
     | { cmd: 'alphaSynth.ready' }
     | { cmd: 'alphaSynth.destroyed' }
@@ -103,6 +111,7 @@ export type IAlphaSynthWorkerMessage =
     | { cmd: 'alphaSynth.readyForPlayback' }
     | { cmd: 'alphaSynth.midiEventsPlayed'; events: Map<string, unknown>[] }
     | { cmd: 'alphaSynth.playbackRangeChanged'; playbackRange: PlaybackRange | null }
+    | { cmd: 'alphaSynth.countInStarted'; lengthMs: number }
 
     /* main -> exporter */
     | {
@@ -124,7 +133,18 @@ export type IAlphaSynthWorkerMessage =
     | { cmd: 'alphaSynth.output.samplesPlayed'; samples: number }
 
     /* worker -> output */
-    | { cmd: 'alphaSynth.output.addSamples'; samples: Float32Array }
+    | {
+          cmd: 'alphaSynth.output.addSamples';
+          samples: Float32Array;
+          mediaStart?: number;
+          mediaPerFrame?: number;
+          countInEnd?: boolean;
+          countInFramesLeft?: number;
+      }
+    | { cmd: 'alphaSynth.output.mediaTimestamp'; frame: number; mediaTime: number }
+    | { cmd: 'alphaSynth.output.countInEnd'; frame: number }
+    | { cmd: 'alphaSynth.output.hold' }
+    | { cmd: 'alphaSynth.output.resume' }
     | { cmd: 'alphaSynth.output.play' }
     | { cmd: 'alphaSynth.output.pause' }
     | { cmd: 'alphaSynth.output.stop' }
@@ -139,4 +159,10 @@ export interface IAlphaTabRenderingWorker extends IAlphaTabWorker<IAlphaTabWorke
 /**
  * @internal
  */
-export interface IAlphaSynthWorker extends IAlphaTabWorker<IAlphaSynthWorkerMessage> {}
+export interface IAlphaSynthWorker extends IAlphaTabWorker<IAlphaSynthWorkerMessage> {
+    addEventListener(event: 'message', handler: (ev: MessageEvent<IAlphaSynthWorkerMessage>) => void): void;
+    /**
+     * The worker failed, for example because its script could not be loaded (spike 10 §1).
+     */
+    addEventListener(event: 'error', handler: (ev: ErrorEvent) => void): void;
+}

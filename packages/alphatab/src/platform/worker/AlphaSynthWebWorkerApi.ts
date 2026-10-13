@@ -12,13 +12,15 @@ import type { MidiFile } from '@coderline/alphatab/midi/MidiFile';
 import { JsonConverter } from '@coderline/alphatab/model/JsonConverter';
 import { ModelUtils } from '@coderline/alphatab/model/ModelUtils';
 import type { Score } from '@coderline/alphatab/model/Score';
+import type { IMediaSynth } from '@coderline/alphatab/platform/javascript/MediaSynthTypes';
 import type {
     IAlphaSynthWorker,
     IAlphaSynthWorkerMessage
 } from '@coderline/alphatab/platform/worker/AlphaTabWorkerProtocol';
 import type { Settings } from '@coderline/alphatab/Settings';
-import type { BackingTrackSyncPoint, IAlphaSynth } from '@coderline/alphatab/synth/IAlphaSynth';
+import type { BackingTrackSyncPoint } from '@coderline/alphatab/synth/IAlphaSynth';
 import type { ISynthOutput } from '@coderline/alphatab/synth/ISynthOutput';
+import { MediaSampleChunk, type IMediaSampleOutput } from '@coderline/alphatab/synth/MediaSampleOutput';
 import { MidiEventsPlayedEventArgs } from '@coderline/alphatab/synth/MidiEventsPlayedEventArgs';
 import type { PlaybackRange } from '@coderline/alphatab/synth/PlaybackRange';
 import { PlaybackRangeChangedEventArgs } from '@coderline/alphatab/synth/PlaybackRangeChangedEventArgs';
@@ -31,9 +33,17 @@ import { SynthConstants } from '@coderline/alphatab/synth/SynthConstants';
  * a WebWorker based alphaSynth which uses the given player as output.
  * @internal
  */
-export class AlphaSynthWebWorkerApi implements IAlphaSynth {
+export class AlphaSynthWebWorkerApi implements IMediaSynth {
     private _synth!: IAlphaSynthWorker;
     private _output: ISynthOutput;
+
+    /**
+     * Receives the stamped samples while mixing with media (the AudioWorklet output); set by BrowserUiFacade.
+     * Without it stamped samples go to the output like any other samples.
+     * @internal
+     */
+    public mediaSampleOutput: IMediaSampleOutput | null = null;
+
     private _workerIsReadyForPlayback: boolean = false;
     private _workerIsReady: boolean = false;
     private _outputIsReady: boolean = false;
@@ -246,6 +256,8 @@ export class AlphaSynthWebWorkerApi implements IAlphaSynth {
         this._output.open(settings.player.bufferTimeInMilliseconds);
         this._synth = synthWorker;
         this._synth.addEventListener('message', e => this.handleWorkerMessage(e));
+        // spike 10 §1: a worker whose script fails to load only fires 'error'
+        this._synth.addEventListener('error', e => this._onWorkerError(e));
         this._synth.postMessage({
             cmd: 'alphaSynth.initialize',
             sampleRate: this._output.sampleRate,
@@ -366,6 +378,23 @@ export class AlphaSynthWebWorkerApi implements IAlphaSynth {
         });
     }
 
+    public followMedia(enabled: boolean, mediaDuration: number, syncPoints: BackingTrackSyncPoint[]): void {
+        this._synth.postMessage({
+            cmd: 'alphaSynth.followMedia',
+            enabled,
+            mediaDuration,
+            syncPoints: Environment.prepareForPostMessage(syncPoints)
+        });
+    }
+
+    public seekToMediaTime(mediaTime: number): void {
+        this._synth.postMessage({ cmd: 'alphaSynth.seekToMediaTime', mediaTime });
+    }
+
+    public setRateCorrection(factor: number): void {
+        this._synth.postMessage({ cmd: 'alphaSynth.setRateCorrection', factor });
+    }
+
     public handleWorkerMessage(e: MessageEvent<IAlphaSynthWorkerMessage>): void {
         const data = e.data;
         switch (data.cmd) {
@@ -419,8 +448,22 @@ export class AlphaSynthWebWorkerApi implements IAlphaSynth {
                 this._checkReadyForPlayback();
                 (this.midiLoadFailed as EventEmitterOfT<Error>).trigger(data.error);
                 break;
-            case 'alphaSynth.output.addSamples':
-                this._output.addSamples(data.samples);
+            case 'alphaSynth.output.addSamples': {
+                const mediaOutput = this.mediaSampleOutput;
+                if (mediaOutput && data.mediaStart !== undefined) {
+                    const chunk = new MediaSampleChunk();
+                    chunk.mediaStart = data.mediaStart;
+                    chunk.mediaPerFrame = data.mediaPerFrame ?? 0;
+                    chunk.countInEnd = data.countInEnd === true;
+                    chunk.countInFramesLeft = data.countInFramesLeft ?? -1;
+                    mediaOutput.addMediaSamples(data.samples, chunk);
+                } else {
+                    this._output.addSamples(data.samples);
+                }
+                break;
+            }
+            case 'alphaSynth.countInStarted':
+                (this.countInStarted as EventEmitterOfT<number>).trigger(data.lengthMs);
                 break;
             case 'alphaSynth.output.play':
                 this._output.play();
@@ -449,6 +492,13 @@ export class AlphaSynthWebWorkerApi implements IAlphaSynth {
         }
     }
 
+    private _onWorkerError(e: ErrorEvent): void {
+        // only the combined player acts on this; synth-only mode keeps today's behavior
+        (this.workerFailed as EventEmitterOfT<Error>).trigger(
+            new Error(`The alphaSynth worker failed: ${e.message ?? 'unknown error'}`)
+        );
+    }
+
     readonly ready: IEventEmitter = new EventEmitter();
     readonly readyForPlayback: IEventEmitter = new EventEmitter();
     readonly finished: IEventEmitter = new EventEmitter();
@@ -464,6 +514,8 @@ export class AlphaSynthWebWorkerApi implements IAlphaSynth {
         new EventEmitterOfT<MidiEventsPlayedEventArgs>();
     readonly playbackRangeChanged: IEventEmitterOfT<PlaybackRangeChangedEventArgs> =
         new EventEmitterOfT<PlaybackRangeChangedEventArgs>();
+    readonly countInStarted: IEventEmitterOfT<number> = new EventEmitterOfT<number>();
+    readonly workerFailed: IEventEmitterOfT<Error> = new EventEmitterOfT<Error>();
 
     //
     // output communication ( output -> worker )
