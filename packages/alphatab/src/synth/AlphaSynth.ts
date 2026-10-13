@@ -21,6 +21,7 @@ import {
 } from '@coderline/alphatab/synth/IAudioExporter';
 import type { IAudioSampleSynthesizer } from '@coderline/alphatab/synth/IAudioSampleSynthesizer';
 import type { ISynthOutput } from '@coderline/alphatab/synth/ISynthOutput';
+import { MediaSampleChunk, type IMediaSampleOutput } from '@coderline/alphatab/synth/MediaSampleOutput';
 import { MidiEventsPlayedEventArgs } from '@coderline/alphatab/synth/MidiEventsPlayedEventArgs';
 import { MidiFileSequencer } from '@coderline/alphatab/synth/MidiFileSequencer';
 import type { PlaybackRange } from '@coderline/alphatab/synth/PlaybackRange';
@@ -33,6 +34,23 @@ import { SynthConstants } from '@coderline/alphatab/synth/SynthConstants';
 import type { Preset } from '@coderline/alphatab/synth/synthesis/Preset';
 import type { SynthEvent } from '@coderline/alphatab/synth/synthesis/SynthEvent';
 import { TinySoundFont } from '@coderline/alphatab/synth/synthesis/TinySoundFont';
+
+/**
+ * A chunk sent while following a media clock, for the played position.
+ * @internal
+ */
+class FollowedChunk {
+    public frames: number;
+    public consumed: number = 0;
+    public mediaStart: number;
+    public mediaPerFrame: number;
+
+    public constructor(frames: number, mediaStart: number, mediaPerFrame: number) {
+        this.frames = frames;
+        this.mediaStart = mediaStart;
+        this.mediaPerFrame = mediaPerFrame;
+    }
+}
 
 /**
  * This is the base class for synthesizer components which can be used to
@@ -61,6 +79,71 @@ export class AlphaSynthBase implements IAlphaSynth {
     protected playedEventsQueue: Queue<SynthEvent> = new Queue<SynthEvent>();
     protected midiEventsPlayedFilterSet: Set<MidiEventType> = new Set<MidiEventType>();
     private _notPlayedSamples: number = 0;
+
+    private _follow: boolean = false;
+    private _followMediaDuration: number = 0;
+    private _followMediaTime: number = 0;
+    private _followRateCorrection: number = 1;
+    private _followChunks: Queue<FollowedChunk> = new Queue<FollowedChunk>();
+    private _followCountInEnded: boolean = false;
+
+    /**
+     * Receives the samples while following a media clock, with their media time (set by the web worker).
+     * Without it the samples go to {@link output} without media time.
+     * @internal
+     */
+    public mediaSampleOutput: IMediaSampleOutput | null = null;
+
+    /**
+     * Whether the synthesizer renders on a media's time axis ({@link followMedia}).
+     * @internal
+     */
+    public get isFollowingMedia(): boolean {
+        return this._follow;
+    }
+
+    /**
+     * Makes the synthesizer render on the media's time axis: the media decides the position through the sync
+     * points, and every chunk carries its media time. The own loop and finish handling is off meanwhile.
+     * @internal
+     */
+    public followMedia(enabled: boolean, mediaDuration: number, syncPoints: BackingTrackSyncPoint[]): void {
+        this._follow = enabled;
+        this._followMediaDuration = mediaDuration;
+        this._followRateCorrection = 1;
+        this.sequencer.mainUpdateSyncPoints(syncPoints);
+    }
+
+    /**
+     * Jumps to the given media time: the buffers are reset and the song state (programs, controllers) is
+     * processed up to there, as for a seek.
+     * @internal
+     */
+    public seekToMediaTime(mediaTime: number): void {
+        if (this.sequencer.isPlayingOneTimeMidi) {
+            this._stopOneTimeMidi();
+        }
+        this._followMediaTime = mediaTime;
+        this._followChunks.clear();
+        this._followCountInEnded = false;
+        this.synthesizer.noteOffAll(true);
+        const midiTime = this.sequencer.mainMidiTimeFromMediaTime(mediaTime, this._followMediaDuration);
+        this.timePosition = Math.max(0, midiTime) / this.sequencer.playbackSpeed;
+        if (!this.sequencer.isPlayingMain) {
+            // the timePosition setter resets the output only while the main song plays
+            this._notPlayedSamples = 0;
+            this.output.resetSamples();
+        }
+    }
+
+    /**
+     * Sets how fast media time advances against the synthesizer's own clock (about 0.98 to 1.02).
+     * @internal
+     */
+    public setRateCorrection(factor: number): void {
+        this._followRateCorrection = factor;
+    }
+
     private _synthStopping = false;
     private _output: ISynthOutput;
     private _loadedMidiInfo?: PositionChangedEventArgs;
@@ -138,6 +221,10 @@ export class AlphaSynthBase implements IAlphaSynth {
     protected updatePlaybackSpeed(value: number) {
         const oldSpeed: number = this.sequencer.playbackSpeed;
         this.sequencer.playbackSpeed = value;
+        if (this._follow) {
+            // the position is the media's, and a speed change doesn't move it (spike 11 §1)
+            return;
+        }
         this.timePosition = this.timePosition * (oldSpeed / value);
     }
 
@@ -256,6 +343,10 @@ export class AlphaSynthBase implements IAlphaSynth {
     }
 
     protected onSampleRequest() {
+        if (this._follow && this.state === PlayerState.Playing) {
+            this._onFollowSampleRequest();
+            return;
+        }
         if (
             this.state === PlayerState.Playing &&
             (!this.sequencer.isFinished || this.synthesizer.activeVoiceCount > 0)
@@ -309,6 +400,73 @@ export class AlphaSynthBase implements IAlphaSynth {
         } else {
             // Tell output that there is no data left for it.
             const samples: Float32Array = new Float32Array(0);
+            this.output.addSamples(samples);
+        }
+    }
+
+    private _onFollowSampleRequest(): void {
+        const microBufferMs = (SynthConstants.MicroBufferSize / this.synthesizer.outSampleRate) * 1000;
+        const isCountIn = this.sequencer.isPlayingCountIn;
+        const mediaStep = microBufferMs * this.sequencer.playbackSpeed * this._followRateCorrection;
+        const mediaStart = this._followMediaTime;
+        // a count-in chunk carries the frames left until the count-in ends at the current speed: the worklet then
+        // knows the end about a bar ahead, sooner than its ~213 ms buffer would show it (Task 7)
+        const countInFramesLeft = isCountIn
+            ? Math.ceil((this.sequencer.currentEndTime - this.sequencer.currentTime) / microBufferMs) *
+              SynthConstants.MicroBufferSize
+            : -1;
+        let samples: Float32Array = new Float32Array(
+            SynthConstants.MicroBufferSize * SynthConstants.MicroBufferCount * SynthConstants.AudioChannels
+        );
+        let bufferPos: number = 0;
+
+        for (let i = 0; i < SynthConstants.MicroBufferCount; i++) {
+            if (isCountIn) {
+                // the count-in runs on the synthesizer's own clock: the media waits for it
+                this.sequencer.fillMidiEventQueue();
+            } else {
+                const nextMediaTime = this._followMediaTime + mediaStep;
+                this.sequencer.fillMidiEventQueueUntil(
+                    this.sequencer.mainMidiTimeFromMediaTime(nextMediaTime, this._followMediaDuration)
+                );
+                this._followMediaTime = nextMediaTime;
+            }
+            const synthesizedEvents = this.synthesizer.synthesize(samples, bufferPos, SynthConstants.MicroBufferSize);
+            bufferPos += SynthConstants.MicroBufferSize * SynthConstants.AudioChannels;
+            for (const e of synthesizedEvents) {
+                if (this.midiEventsPlayedFilterSet.has(e.event.type)) {
+                    this.playedEventsQueue.enqueue(e);
+                }
+            }
+            if (isCountIn && this.sequencer.isFinished) {
+                // the count-in ends here; the song continues in the next chunk, on the media's axis,
+                // in the same stream (no buffer reset at the boundary, §4)
+                this.sequencer.resetCountIn();
+                this.synthesizer.setupMetronomeChannel(this.sequencer.metronomeChannel, this.metronomeVolume);
+                this._followCountInEnded = true;
+                break;
+            }
+        }
+
+        if (bufferPos < samples.length) {
+            samples = samples.subarray(0, bufferPos);
+        }
+        const chunk = new MediaSampleChunk();
+        if (!isCountIn) {
+            chunk.mediaStart = mediaStart;
+            chunk.mediaPerFrame = mediaStep / SynthConstants.MicroBufferSize;
+            chunk.countInEnd = this._followCountInEnded;
+            this._followCountInEnded = false;
+        } else {
+            chunk.countInFramesLeft = countInFramesLeft;
+        }
+        this._followChunks.enqueue(
+            new FollowedChunk(bufferPos / SynthConstants.AudioChannels, chunk.mediaStart, chunk.mediaPerFrame)
+        );
+        this._notPlayedSamples += samples.length;
+        if (this.mediaSampleOutput) {
+            this.mediaSampleOutput.addMediaSamples(samples, chunk);
+        } else {
             this.output.addSamples(samples);
         }
     }
@@ -515,10 +673,37 @@ export class AlphaSynthBase implements IAlphaSynth {
         if (sampleCount === 0) {
             return;
         }
+        if (this._follow) {
+            this._onFollowSamplesPlayed(sampleCount);
+            return;
+        }
         const playedMillis: number = (sampleCount / this.synthesizer.outSampleRate) * 1000;
         this._notPlayedSamples -= sampleCount * SynthConstants.AudioChannels;
         this.updateTimePosition(this._timePosition + playedMillis, false);
         this.checkForFinish();
+    }
+
+    private _onFollowSamplesPlayed(frameCount: number): void {
+        this._notPlayedSamples -= frameCount * SynthConstants.AudioChannels;
+        let remaining = frameCount;
+        let playedMediaTime = -1;
+        while (remaining > 0 && !this._followChunks.isEmpty) {
+            const chunk = this._followChunks.peek()!;
+            const take = Math.min(remaining, chunk.frames - chunk.consumed);
+            chunk.consumed += take;
+            remaining -= take;
+            if (chunk.mediaStart >= 0) {
+                playedMediaTime = chunk.mediaStart + chunk.consumed * chunk.mediaPerFrame;
+            }
+            if (chunk.consumed >= chunk.frames) {
+                this._followChunks.dequeue();
+            }
+        }
+        if (playedMediaTime >= 0) {
+            const midiTime = this.sequencer.mainMidiTimeFromMediaTime(playedMediaTime, this._followMediaDuration);
+            this.updateTimePosition(Math.max(0, midiTime) / this.sequencer.playbackSpeed, false);
+        }
+        // no checkForFinish: while following, the combined player owns the song end and the loop wrap (§6.2)
     }
 
     protected checkForFinish() {
