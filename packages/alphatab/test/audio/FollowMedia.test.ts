@@ -319,4 +319,100 @@ describe('FollowMediaSynthTests', () => {
         expect(finished).toBe(0);
         expect(synth.state).toBe(PlayerState.Playing);
     });
+
+    it('count-in-renders-before-the-song-in-one-stream', async () => {
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const target = syncPoints[2].syncTime;
+        const { output, synthesizer, synth } = createFollowingSynth(midi, syncPoints, 1, target);
+        const bpm = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer.mainSyncBpmAt(target);
+        // the time signature at the start position, as the synthesizer saw it during the seek
+        const beats = synthesizer.timeSignatureNumerator;
+        const beatMs = (60000 / bpm) * (4 / synthesizer.timeSignatureDenominator);
+        const lengths: number[] = [];
+        synth.countInStarted.on(l => lengths.push(l));
+        synth.countInVolume = 1;
+        const resets = output.resetCount;
+
+        synth.play();
+        while (output.stampedChunks.length === 0) {
+            output.request();
+        }
+
+        expect(lengths.length).toBe(1);
+        expect(lengths[0]).toBeCloseTo(beats * beatMs, 6); // one bar at the sync point's tempo (§2)
+        const countInFrames = output.chunks.filter(c => c.mediaStart < 0).reduce((s, c) => s + c.frames, 0);
+        expect(countInFrames).toBeGreaterThanOrEqual((lengths[0] / 1000) * 44100);
+        expect(countInFrames).toBeLessThanOrEqual((lengths[0] / 1000) * 44100 + SynthConstants.MicroBufferSize);
+        // the first count-in chunk already tells how far the count-in's end is (Task 7 reports it a bar ahead)
+        expect(Math.abs(output.countInFramesLeft[0] - countInFrames)).toBeLessThanOrEqual(
+            SynthConstants.MicroBufferSize
+        );
+        const first = output.stampedChunks[0];
+        expect(first.countInEnd).toBe(true);
+        expect(first.mediaStart).toBe(target);
+        expect(output.resetCount).toBe(resets); // no buffer reset at the boundary
+    });
+
+    it('count-in-clicks-one-bar-in-the-time-signature', () => {
+        const midi = loadTexSong(`
+            \\tempo 100
+            .
+            \\ts 3 4
+            C4 * 3 | C4 * 3 | C4 * 3
+        `);
+        const { output, synthesizer, synth } = createFollowingSynth(midi, [], 1, 0);
+        const lengths: number[] = [];
+        synth.countInStarted.on(l => lengths.push(l));
+        synth.countInVolume = 1;
+        synth.play();
+        while (output.stampedChunks.length === 0) {
+            output.request();
+        }
+        const countInMicroBuffers = output.microBufferEnds().filter(e => e < 0).length;
+        const countInClicks = synthesizer.events.filter(
+            e => e.synthEvent.isMetronome && e.microBuffer < countInMicroBuffers
+        );
+        expect(countInClicks.length).toBe(3);
+        expect(lengths[0]).toBeCloseTo(3 * 600, 6); // the score's tempo without sync points
+    });
+
+    it('a-seek-during-the-count-in-ends-it', async () => {
+        // Review Focus 2: the combined player pauses mid count-in, seeks, and plays again without a count-in
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const { output, synthesizer, synth } = createFollowingSynth(midi, syncPoints, 1, syncPoints[2].syncTime);
+        synth.countInVolume = 1;
+        synth.play();
+        output.request(); // the first part of the count-in
+        synth.pause();
+        synth.seekToMediaTime(20000);
+        synth.countInVolume = 0;
+        const first = output.chunks.length;
+        synthesizer.events.length = 0;
+        synth.play();
+        output.request();
+
+        const chunk = output.chunks[first];
+        expect(chunk.mediaStart).toBe(20000); // nothing left of the old count-in
+        expect(chunk.countInEnd).toBe(false);
+        // the song state was processed up to the target: no burst of the notes before it
+        const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer;
+        const songTime = oracle.mainMidiTimeFromMediaTime(20000, MediaDuration);
+        expect(noteOnTimes(synthesizer).filter(t => t < songTime - 1)).toEqual([]);
+    });
+
+    it('count-in-started-fires-only-while-following', () => {
+        const midi = loadTexSong(`
+            \\tempo 120
+            .
+            C4 * 4
+        `);
+        const output = new FollowTestOutput();
+        const synth = new AlphaSynthBase(output, new RecordingAudioSynthesizer(), 500);
+        synth.loadMidiFile(midi);
+        const lengths: number[] = [];
+        synth.countInStarted.on(l => lengths.push(l));
+        synth.countInVolume = 1;
+        synth.play();
+        expect(lengths.length).toBe(0);
+    });
 });

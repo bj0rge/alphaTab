@@ -123,6 +123,12 @@ export class AlphaSynthBase implements IAlphaSynth {
         if (this.sequencer.isPlayingOneTimeMidi) {
             this._stopOneTimeMidi();
         }
+        if (this.sequencer.isPlayingCountIn) {
+            // the combined player paused mid count-in (a seek, Pause or Stop): end the count-in before the seek,
+            // as the in-stream end does, so the seek processes the song's events and plays no stale count-in
+            this.sequencer.resetCountIn();
+            this.synthesizer.setupMetronomeChannel(this.sequencer.metronomeChannel, this.metronomeVolume);
+        }
         this._followMediaTime = mediaTime;
         this._followChunks.clear();
         this._followCountInEnded = false;
@@ -481,9 +487,13 @@ export class AlphaSynthBase implements IAlphaSynth {
 
         if (this._countInVolume > 0) {
             Logger.debug('AlphaSynth', 'Starting countin');
-            this.sequencer.startCountIn();
+            // following a media clock: the count-in plays at the media's tempo at the start position (§2)
+            this.sequencer.startCountIn(this._follow ? this.sequencer.mainSyncBpmAt(this._followMediaTime) : 0);
             this.synthesizer.setupMetronomeChannel(this.sequencer.metronomeChannel, this._countInVolume);
             this.updateTimePosition(0, true);
+            if (this._follow) {
+                (this.countInStarted as EventEmitterOfT<number>).trigger(this.sequencer.currentEndTime);
+            }
         }
 
         this.output.play();
@@ -853,6 +863,11 @@ export class AlphaSynthBase implements IAlphaSynth {
     public readonly positionChanged: IEventEmitterOfT<PositionChangedEventArgs>;
     public readonly midiEventsPlayed: IEventEmitterOfT<MidiEventsPlayedEventArgs> =
         new EventEmitterOfT<MidiEventsPlayedEventArgs>();
+    /**
+     * Fired when a count-in starts while following a media clock, with its length in milliseconds of real time.
+     * @internal
+     */
+    public readonly countInStarted: IEventEmitterOfT<number> = new EventEmitterOfT<number>();
     /**
      * @lateinit
      */
