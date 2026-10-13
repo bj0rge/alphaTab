@@ -128,7 +128,13 @@ export class WebAudioMixGraph implements IMediaMixGraph, IExternalClockSource {
      */
     public heardContextTime(): number {
         const timestamp = this.context.getOutputTimestamp?.();
-        if (timestamp && timestamp.contextTime !== undefined && timestamp.performanceTime !== undefined) {
+        // both members are 0 until the context has rendered its first block (Web Audio): nothing is heard yet
+        if (
+            timestamp &&
+            timestamp.contextTime !== undefined &&
+            timestamp.performanceTime !== undefined &&
+            timestamp.performanceTime > 0
+        ) {
             return timestamp.contextTime + (performance.now() - timestamp.performanceTime) / 1000;
         }
         return this.context.currentTime - (this.context.outputLatency ?? 0);
