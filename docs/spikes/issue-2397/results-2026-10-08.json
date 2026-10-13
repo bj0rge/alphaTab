@@ -1,0 +1,3251 @@
+{
+  "about": "Spike 4 raw results (2026-10-08). Chromium on macOS, 48 kHz, sync lab in nudgecal mode, pelados.gp with the generated beep backing track (src=beeps). Start-test rows read: 'first 5 click offsets (ms) | firstGap = first click minus first backing-track beep (ms), ok/SKIP, clicks/beeps | controller re-syncs after Play | ms until clicks stay within 3 ms'. A start is SKIP when the first beep after Play has no click within 50 ms.",
+  "calibratedLatencyMs": {
+    "1": 0.2,
+    "0.5": 60,
+    "0.75": 26.6,
+    "1.25": -4.1,
+    "1.5": -3.4
+  },
+  "startTests": {
+    "asBuilt_1x_settle4ms_noSkipCheck": {
+      "note": "first run of the day, before the skip check existed",
+      "rows": [
+        "10.7 -3.1 1.9 1.5 1.2 | lock 896 | resync 2",
+        "0 -0.6 -1 -0.1 -0.5 | lock 5 | resync 0",
+        "0 -0.5 -0.9 0 -0.4 | lock 11 | resync 0",
+        "5.3 -1.8 4.3 3.6 3.1 | lock 2195 | resync 2",
+        "-1.7 -0.8 -1.2 -0.4 0.5 | lock 453 | resync 0",
+        "5.3 2.2 1.7 1.2 0.8 | lock 427 | resync 1",
+        "5.3 4.7 3.6 3 3.7 | lock null | resync 0",
+        "0 -0.7 -1.3 -0.6 0.1 | lock 11 | resync 0",
+        "5.3 4.6 3.9 3.2 3.9 | lock 2353 | resync 0",
+        "0 -1.9 -1 0 -0.5 | lock 5 | resync 0",
+        "-1.1 -0.2 -0.6 0.3 -0.1 | lock 444 | resync 0",
+        "2.7 2.2 1.8 2 0.8 | lock 5 | resync 0",
+        "0 -0.7 -1.4 -0.7 -0.9 | lock 5 | resync 0",
+        "5.3 0.6 1.3 0.6 1.2 | lock 400 | resync 1",
+        "5.3 4.6 3.4 4 3.3 | lock 1964 | resync 0"
+      ]
+    },
+    "settle12ms_nudge300_1x_noSkipCheck": {
+      "rows": [
+        "-5.3 -5.7 1.9 2.8 -0.2 | lock 907 | resync 0",
+        "5.3 3.4 0.3 1.2 2.2 | lock 888 | resync 0",
+        "0 -0.5 1.8 1.4 0.9 | lock 5 | resync 0",
+        "0 -0.5 1.7 0.9 0.5 | lock 5 | resync 0",
+        "6.7 4.9 -0.8 -1.2 0.9 | lock 888 | resync 0",
+        "0 -0.5 1.7 2.6 2.1 | lock 5 | resync 0",
+        "0 -0.7 2.3 3 1 | lock 5 | resync 0",
+        "6.7 6 0 -1.9 1.4 | lock 793 | resync 0",
+        "0 -0.7 1.3 1.9 1.3 | lock 5 | resync 0",
+        "5.3 4.8 0.4 1.3 0.9 | lock 888 | resync 0",
+        "0.2 2.4 0.7 0.3 1.2 | lock 445 | resync 0",
+        "5.3 3.5 0.4 0.7 0.8 | lock 884 | resync 0",
+        "5.3 4.7 0 0.6 1.8 | lock 793 | resync 0",
+        "0 -0.7 2.6 1.9 1.2 | lock 11 | resync 0",
+        "0 -0.7 2.1 2.7 1.9 | lock 5 | resync 0"
+      ]
+    },
+    "asBuilt_1x_settle4ms_freshPage": {
+      "rows": [
+        "5.3 -0.4 0.5 0.1 -0.2 | gap 5.3 ok 6/6 | resync 1",
+        "0 -0.6 -1 -0.1 -0.5 | gap 0 ok 6/6 | resync 0",
+        "0 -0.5 -0.9 0 -0.4 | gap 0 ok 6/6 | resync 0",
+        "5.3 -5.8 0.3 0.9 0.5 | gap 5.3 ok 6/6 | resync 3",
+        "-0.4 -0.8 0.1 -0.4 0.5 | gap 444 SKIP 5/6 | resync 0",
+        "0 -0.5 -1 -0.1 -0.6 | gap 0 ok 6/6 | resync 0",
+        "6.7 0.7 0.9 0.3 1 | gap 6.7 ok 7/7 | resync 1",
+        "5.3 0.7 0 0.8 0.1 | gap 5.3 ok 7/7 | resync 1",
+        "0 -0.7 -0.1 -0.8 -0.1 | gap 0 ok 7/7 | resync 0",
+        "0 -0.5 -1 0 -0.5 | gap 0 ok 6/6 | resync 0",
+        "1.5 2.4 2 1.6 1.2 | gap 441.3 SKIP 5/6 | resync 1",
+        "0 -0.5 -0.9 -0.7 -0.5 | gap 0 ok 6/6 | resync 0",
+        "0 -0.7 0 -0.7 0.4 | gap 0 ok 7/7 | resync 0",
+        "5.3 -3.4 1.3 1.9 1.2 | gap 5.3 ok 7/7 | resync 3",
+        "0 -0.7 -0.6 0 -0.7 | gap 0 ok 7/7 | resync 0"
+      ]
+    },
+    "asBuilt_0.5x": {
+      "rows": [
+        "7.5 0.6 -6.9 -10.5 11.3 | gap 845 SKIP 5/6 | resync 1",
+        "10.4 1.6 22.9 13.7 4.4 | gap 841 SKIP 5/6 | resync 0",
+        "-0.1 -14.2 5.3 -10.1 8.9 | gap 830.4 SKIP 5/6 | resync 0",
+        "-1.5 7.6 -12.1 8.3 -5.3 | gap 823.7 SKIP 5/6 | resync 0",
+        "7.9 -3.5 15.9 6.3 -3.8 | gap 842.4 SKIP 5/6 | resync 0",
+        "8 3 -2.4 -7.9 -8.9 | gap 787.7 SKIP 5/6 | resync 0",
+        "-6.3 -0.1 7 12.2 19.7 | gap 750.4 SKIP 5/6 | resync 0",
+        "-13 -5 -3.2 -2.9 -2.6 | gap 743.7 SKIP 5/6 | resync 0",
+        "19.1 14.1 10.8 5.9 0.9 | gap 741 SKIP 5/6 | resync 0",
+        "2.5 -7.6 11.8 2.2 -8 | gap 835.7 SKIP 5/6 | resync 0"
+      ]
+    },
+    "asBuilt_1.5x": {
+      "note": "SKIP here = the backing track's own first beep is missing (one more click than beeps); the synth plays the first beat",
+      "rows": [
+        "-269.8 -1.8 -0.2 0.2 -2 | gap -269.8 SKIP 8/8 | resync 1",
+        "-297 -3.6 -2 -1.8 -2.5 | gap -297 SKIP 9/8 | resync 0",
+        "-296.8 -3.4 291.2 0 -2.1 | gap -296.8 SKIP 9/7 | resync 0",
+        "-288.9 0.5 1 1.2 -0.9 | gap -288.9 SKIP 9/8 | resync 0",
+        "-298.1 -0.8 0.8 1.6 -1.1 | gap -298.1 SKIP 9/8 | resync 0",
+        "-277.9 0.8 0.9 -0.6 -1.8 | gap -277.9 SKIP 9/8 | resync 0",
+        "-270.7 -5.3 -3.7 -6.1 -5 | gap -270.7 SKIP 10/9 | resync 0",
+        "-269.3 -4 -2.5 -2.9 -5.6 | gap -269.3 SKIP 10/9 | resync 0",
+        "-260 1.3 -0.1 -0.1 -1.4 | gap -260 SKIP 10/9 | resync 0",
+        "-302.2 -6.2 -4.6 -3.8 -5.1 | gap -302.2 SKIP 9/8 | resync 0"
+      ]
+    },
+    "latencyOffsetForcedBelowZero_1x": {
+      "note": "first row = first start after a speed change (start lead learned at 1.5x)",
+      "rows": [
+        "16 6.3 0.5 0.1 1.2 | gap 16 ok 6/6 | resync 2",
+        "5.3 6 3 2.6 2.2 | gap 5.3 ok 6/6 | resync 1",
+        "0 0.9 0.5 1.4 0.9 | gap 0 ok 6/6 | resync 0",
+        "0 0.8 0.3 0.9 0.5 | gap 0 ok 6/6 | resync 0",
+        "0 0.9 0.5 1.4 0.9 | gap 0 ok 6/6 | resync 0",
+        "8 2.2 1.7 2.6 2.1 | gap 8 ok 6/6 | resync 1",
+        "0 0.7 0.9 0.3 1 | gap 0 ok 7/7 | resync 0",
+        "0 0.7 0 0.8 1.4 | gap 0 ok 7/7 | resync 0",
+        "6.7 2 1.3 1.9 1.3 | gap 6.7 ok 7/7 | resync 1",
+        "0 0.8 0.4 1.3 0.9 | gap 0 ok 6/6 | resync 0",
+        "0 0.2 1.1 0.7 1.6 | gap 0 ok 6/6 | resync 0"
+      ]
+    },
+    "latencyOffsetForcedToZero_0.5x": {
+      "rows": [
+        "-35 68.8 60.6 53.1 49.5 | gap -35 ok 5/6 | resync 1",
+        "18.4 69 60.3 81.5 72.4 | gap 18.4 ok 5/6 | resync 0",
+        "7.7 58.6 44.5 64 48.6 | gap 7.7 ok 6/6 | resync 0",
+        "21 65.2 74.3 53.3 72.3 | gap 21 ok 6/6 | resync 0"
+      ]
+    },
+    "startAtTarget_settle12ms_1x": {
+      "rows": [
+        "5.3 4.9 0.5 0.1 2.5 | gap 5.3 ok 6/6 | resync 0 | lock 895",
+        "0 -0.6 3 1.2 2.2 | gap 0 ok 6/6 | resync 0 | lock 5",
+        "0 -0.5 3.1 2.7 0.9 | gap 0 ok 6/6 | resync 0 | lock 1328",
+        "6.7 7.5 -1 -1.7 1.8 | gap 6.7 ok 6/6 | resync 0 | lock 869",
+        "0 -0.4 3.2 2.8 0.9 | gap 0 ok 6/6 | resync 0 | lock 1347",
+        "5.3 4.9 1.7 1.2 2.1 | gap 5.3 ok 6/6 | resync 0 | lock 845",
+        "0 -0.7 0.9 1.6 1 | gap 0 ok 7/7 | resync 0 | lock 11",
+        "5.3 4.7 1.3 -1.9 1.4 | gap 5.3 ok 7/7 | resync 0 | lock 800",
+        "5.3 4.6 1.3 1.9 2.6 | gap 5.3 ok 7/7 | resync 0 | lock 789",
+        "-5.3 -5.9 4.4 5.3 2.2 | gap -5.3 ok 6/6 | resync 0 | lock 1789",
+        "0 -1.1 2.4 2 1.6 | gap 0 ok 6/6 | resync 0 | lock 5",
+        "6.7 6.2 0.4 0.7 2.1 | gap 6.7 ok 6/6 | resync 0 | lock 879",
+        "0 -0.7 0 2 1.8 | gap 0 ok 7/7 | resync 0 | lock 5",
+        "0 -0.7 2.6 1.9 1.2 | gap 0 ok 7/7 | resync 0 | lock 5",
+        "5.3 4.6 2.1 0 1.9 | gap 5.3 ok 7/7 | resync 0 | lock 792"
+      ]
+    },
+    "startAtTarget_0.5x": {
+      "note": "first row = first start at this speed (no start lead learned yet)",
+      "rows": [
+        "-29.6 14.1 3.2 -5.5 -9.1 | gap -29.6 ok 6/6 | resync 0",
+        "15.7 29 -10.4 12.2 5.7 | gap 15.7 ok 6/6 | resync 0",
+        "14.4 27.9 -11.5 8 -8.7 | gap 14.4 ok 6/6 | resync 0",
+        "11.7 21.2 7.6 -12.1 8.3 | gap 11.7 ok 6/6 | resync 0",
+        "19.7 37.2 -6.1 13.3 3.6 | gap 19.7 ok 6/6 | resync 0",
+        "2.4 29.4 4.4 -1.1 -6.6 | gap 2.4 ok 6/6 | resync 0",
+        "18.4 24.4 -5.4 1.6 8.2 | gap 18.4 ok 6/6 | resync 0",
+        "3.7 11 -6.3 -4.6 -4.2 | gap 3.7 ok 6/6 | resync 0",
+        "13 44.5 6.1 2.8 -0.7 | gap 13 ok 6/6 | resync 0",
+        "10.4 26.5 -4.9 14.5 3.5 | gap 10.4 ok 6/6 | resync 0"
+      ]
+    },
+    "startAtTarget_1.5x": {
+      "note": "SKIP = backing track's own first beep missing, as in asBuilt_1.5x",
+      "rows": [
+        "-309.8 -12.5 -3.1 -1.5 -1.2 | gap -309.8 SKIP 9/8 | resync 1",
+        "-293 0.4 2 2.2 1.5 | gap -293 SKIP 9/8 | resync 0",
+        "-291.4 1.9 -288 4 3.3 | gap -291.4 SKIP 9/7 | resync 0",
+        "-290.2 0.5 -0.4 -0.1 -0.9 | gap -290.2 SKIP 9/8 | resync 0",
+        "-299.4 -3.4 -1.8 0.3 -2.4 | gap -299.4 SKIP 9/8 | resync 0",
+        "-277.9 0.8 0.9 0.8 0.9 | gap -277.9 SKIP 9/8 | resync 0",
+        "-264 0 2.9 -0.8 0.3 | gap -264 SKIP 10/9 | resync 0",
+        "-261.3 2.7 4.2 2.4 -0.3 | gap -261.3 SKIP 10/9 | resync 0",
+        "-257.4 4 2.6 2.5 1.3 | gap -257.4 SKIP 10/9 | resync 0",
+        "-295.5 -0.9 2 1.6 0.2 | gap -295.5 SKIP 9/8 | resync 0"
+      ]
+    },
+    "startAtTarget_1.5x_play60msBeforeBeat": {
+      "rows": [
+        "-12 -12.5 -4.5 -2.9 -1.2 | gap -12 ok 9/9 | resync 1",
+        "-2.7 -5 -3.4 -1.8 -3.8 | gap -2.7 ok 9/9 | resync 0",
+        "-2.7 -3.4 289.9 -1.3 -2.1 | gap -2.7 ok 9/8 | resync 0",
+        "1.3 0.5 1 1.2 -0.9 | gap 1.3 ok 9/9 | resync 0",
+        "1.3 -2.1 0.8 1.6 -1.1 | gap 1.3 ok 9/9 | resync 0",
+        "2.7 2.1 2.2 0.8 -0.5 | gap 2.7 ok 9/9 | resync 0",
+        "-2.7 -4 -2.4 -6.1 -3.7 | gap -2.7 ok 10/10 | resync 0",
+        "-4 -6.7 -3.8 -5.6 -5.6 | gap -4 ok 10/10 | resync 0",
+        "-2.7 -2.7 -2.7 -2.8 -2.7 | gap -2.7 ok 10/10 | resync 0",
+        "2.7 0.5 2 1.6 0.2 | gap 2.7 ok 12/12 | resync 0"
+      ]
+    }
+  },
+  "loopTests": {
+    "note": "2-bar loop from beat 40, start at target + settle 12 ms. missing = beep without a click within 50 ms; extra = click without a beep; gaps = ms added at a wrap beyond one beat (only values > 15 ms listed).",
+    "A_combinedOwnsWrap": [
+      {
+        "speed": 1,
+        "wraps": 11,
+        "beeps": 89,
+        "clicks": 89,
+        "missing": 0,
+        "extra": 0,
+        "meanMs": 1.6,
+        "p95Ms": 5.3,
+        "gaps": []
+      },
+      {
+        "speed": 1,
+        "wraps": 10,
+        "beeps": 89,
+        "clicks": 90,
+        "missing": 0,
+        "extra": 1,
+        "meanMs": 1.4,
+        "p95Ms": 5.7,
+        "gaps": [
+          79
+        ]
+      },
+      {
+        "speed": 0.5,
+        "wraps": 7,
+        "beeps": 57,
+        "clicks": 57,
+        "missing": 0,
+        "extra": 0,
+        "meanMs": 3.7,
+        "p95Ms": 28.8,
+        "gaps": [
+          30,
+          24,
+          24,
+          24,
+          24,
+          24,
+          24
+        ]
+      },
+      {
+        "speed": 1.5,
+        "preRollMs": 0,
+        "wraps": 11,
+        "beeps": 78,
+        "clicks": 90,
+        "missing": 5,
+        "extra": 17,
+        "meanMs": -2.2,
+        "p95Ms": 8.6,
+        "gaps": [
+          285,
+          280,
+          285,
+          285,
+          285,
+          280,
+          285,
+          285,
+          285,
+          285,
+          285
+        ],
+        "note": "the backing track's first beat after each restart is missing (Chrome time-stretch start)"
+      },
+      {
+        "speed": 1.5,
+        "preRollMs": 60,
+        "wraps": 10,
+        "beeps": 87,
+        "clicks": 88,
+        "missing": 0,
+        "extra": 1,
+        "meanMs": -2.8,
+        "p95Ms": 5.8,
+        "gaps": [
+          26,
+          23,
+          29,
+          23,
+          23,
+          29,
+          29,
+          23,
+          29,
+          23
+        ]
+      }
+    ],
+    "B_backingTrackOwnsWrap": [
+      {
+        "speed": 1,
+        "wraps": 11,
+        "beeps": 92,
+        "clicks": 92,
+        "missing": 0,
+        "extra": 0,
+        "meanMs": 1.9,
+        "p95Ms": 4.9,
+        "gaps": [
+          50,
+          45,
+          45,
+          45,
+          45,
+          45,
+          39,
+          50,
+          29
+        ]
+      },
+      {
+        "speed": 0.5,
+        "wraps": 6,
+        "beeps": 60,
+        "clicks": 62,
+        "missing": 0,
+        "extra": 2,
+        "meanMs": 2.9,
+        "p95Ms": 15.6,
+        "gaps": [
+          40,
+          40
+        ]
+      },
+      {
+        "speed": 1.5,
+        "wraps": 11,
+        "beeps": 83,
+        "clicks": 88,
+        "missing": 2,
+        "extra": 7,
+        "meanMs": -2.2,
+        "p95Ms": 11.1,
+        "gaps": [
+          36,
+          25,
+          25,
+          312,
+          312,
+          25,
+          307,
+          31,
+          307,
+          312
+        ]
+      }
+    ]
+  },
+  "backingTrackFirstBeatLevel": {
+    "note": "RMS envelope peaks (dBFS) of the beep backing track after Play exactly on a beat, 4 starts per speed. At 1.5x the beep at the start position (t = 0) is missing in all 4.",
+    "1x": [
+      [
+        "5 ms: -9.7",
+        "445: -9.7",
+        "885: -9.7"
+      ],
+      [
+        "10: -9.7",
+        "455: -9.7",
+        "900: -10"
+      ],
+      [
+        "10: -9.7",
+        "455: -9.7",
+        "900: -10.4"
+      ],
+      [
+        "(0: below the peak finder's first window)",
+        "435: -9.7",
+        "875: -9.7"
+      ]
+    ],
+    "1.5x": [
+      [
+        "315: -11.9",
+        "610: -20.4",
+        "900: -12.1",
+        "1195: -13.5"
+      ],
+      [
+        "320: -20",
+        "615: -12.9",
+        "910: -12",
+        "1205: -19.2"
+      ],
+      [
+        "320: -20",
+        "615: -13.2",
+        "920: -19",
+        "1215: -19.5"
+      ],
+      [
+        "310: -13.1",
+        "605: -12.3",
+        "895: -20",
+        "1190: -11.8"
+      ]
+    ]
+  },
+  "resyncCut": "see spike-4-resync-cut.json / .svg",
+  "spike5UnprobedSpeeds": {
+    "what": "MixSpikePlayer._measureLatency(rate): real ms between hearing a probe beep and <audio>.currentTime reaching it (median over the probe file), 3 runs per speed; background = the page's own background probe at load",
+    "runsMs": {
+      "0.25": [
+        79.9,
+        79.9,
+        79.9
+      ],
+      "0.5": [
+        60,
+        60,
+        62.6
+      ],
+      "0.6": [
+        51.6,
+        53.7,
+        53.5
+      ],
+      "0.75": [
+        25.5,
+        25.5,
+        25.5
+      ],
+      "0.83": [
+        20.1,
+        20.1,
+        20.1
+      ],
+      "0.9": [
+        19.2,
+        17.9,
+        17.3
+      ],
+      "1": [
+        0.1,
+        0.1,
+        1.6
+      ],
+      "1.1": [
+        -3.7,
+        -3.7,
+        -3.9
+      ],
+      "1.25": [
+        -4.9,
+        -6.5,
+        -2.2
+      ],
+      "1.5": [
+        -6.7,
+        -6.7,
+        -6.7
+      ],
+      "2": [
+        -6.9,
+        -6.3,
+        -5.8
+      ]
+    },
+    "backgroundMs": {
+      "0.5": 60,
+      "0.75": 28.2,
+      "1": 1.4,
+      "1.25": -3.9,
+      "1.5": -3.1
+    },
+    "straightLineGuessMs": {
+      "0.25": 60.0,
+      "0.6": 46.2,
+      "0.83": 17.6,
+      "0.9": 10.7,
+      "1.1": -1.3,
+      "2": -6.7
+    },
+    "guessRule": "linear between the nearest probed speeds (medians incl. background: 0.5x 60, 0.75x 25.5, 1x 0.75, 1.25x -4.4, 1.5x -6.7); outside them the nearest probed value"
+  },
+  "spike5PlayBeat": {
+    "what": "sync lab 1x, silent (taps only), metronome on, tracks muted; play from 20 s, after 3 s api.playBeat(first beat of bar 13, track 1; 2 notes); count synth-tap clicks and media-tap beeps",
+    "last2sBefore": {
+      "clicks": 4,
+      "beeps": 4
+    },
+    "first1sAfter": {
+      "clicks": 0,
+      "beeps": 3
+    },
+    "next2sAfter": {
+      "clicks": 0,
+      "beeps": 4
+    },
+    "states": [
+      {
+        "when": "before",
+        "api": "Playing",
+        "mix": "Playing",
+        "synth": "Playing",
+        "mediaPaused": false
+      },
+      {
+        "when": "0.5 s after",
+        "api": "Playing",
+        "mix": "Playing",
+        "synth": "Paused",
+        "mediaPaused": false
+      },
+      {
+        "when": "3 s after",
+        "api": "Playing",
+        "mix": "Playing",
+        "synth": "Paused",
+        "mediaPaused": false
+      }
+    ],
+    "controllerActionsAfter": {}
+  },
+  "spike5ClickLevel": {
+    "what": "sync lab src=mp3 (pelados.gp recording), 1x, silent, metronomeVolume 1, synth tracks muted; AnalyserNode fftSize 1024 (21 ms) every 10 ms for 10 s from 20 s; sum busses: default mix media 1/synth 1, spike page mix media 0.35/synth 2",
+    "windows": 938,
+    "mediaRmsMedianDb": -18.0,
+    "mediaRmsP90Db": -15.2,
+    "mediaPeakMaxDb": -2.3,
+    "clickCount": 22,
+    "clickPeakMedianDb": -11.4,
+    "clickPeakMaxDb": -11.4,
+    "clickWindowRmsMedianDb": -25.9,
+    "sumDefaultMixPeakMaxDb": -2.3,
+    "sumDefaultMixWindowsOver0dB": 0,
+    "sumSpikePageMixPeakMaxDb": -3.8,
+    "sumSpikePageMixWindowsOver0dB": 0
+  },
+  "spike6CountIn": {
+    "what": "sync lab nudgecal, beeps, 4-beat count-in emulated (synth starts 4 beats before the target, metronome only); media paused until play() issued a learned media-start latency before the boundary frame from the worklet stamps; downbeat = synth click nearest the media first beep (click - beep, + = click late); settle threshold 12 ms + settle nudge gain 300 at 1x",
+    "asBuiltSettle4ms_1x": {
+      "downbeatMs": [
+        -4,
+        0,
+        6.7,
+        -1.3,
+        0,
+        1.3,
+        -1.3,
+        0
+      ],
+      "resyncs": [
+        2,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "1x": [
+      {
+        "countInClicks": 4,
+        "downbeatMs": 1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.4,
+        "learnedDmMs": 1.4,
+        "next4Ms": [
+          0.9,
+          0.5,
+          0.1,
+          1.2
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 0.0,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.0,
+        "learnedDmMs": 1.7,
+        "next4Ms": [
+          0.7,
+          1.6,
+          1.2,
+          0.8
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.2,
+        "learnedDmMs": 2.4,
+        "next4Ms": [
+          0.9,
+          0.5,
+          0.0,
+          0.9
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": -1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.6,
+        "learnedDmMs": 3.3,
+        "next4Ms": [
+          -0.5,
+          1.7,
+          0.9,
+          0.5
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 0.0,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.1,
+        "learnedDmMs": 4.3,
+        "next4Ms": [
+          0.9,
+          1.8,
+          0.1,
+          -0.4
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.7,
+        "learnedDmMs": 2.3,
+        "next4Ms": [
+          0.9,
+          -1.0,
+          -0.1,
+          0.8
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": -1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.4,
+        "learnedDmMs": 3.2,
+        "next4Ms": [
+          0.7,
+          0.9,
+          0.3,
+          -0.3
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 0.0,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.0,
+        "learnedDmMs": 4.1,
+        "next4Ms": [
+          0.7,
+          0.0,
+          0.8,
+          0.1
+        ]
+      }
+    ],
+    "1.5x_pre60": [
+      {
+        "countInClicks": 4,
+        "downbeatMs": -21.3,
+        "skipped": false,
+        "resyncs": 1,
+        "playLateMs": 1.3,
+        "learnedDmMs": 23.8,
+        "next4Ms": [
+          2.2,
+          0.9,
+          1.1,
+          1.5
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.4,
+        "learnedDmMs": 23.3,
+        "next4Ms": [
+          0.4,
+          0.6,
+          2.2,
+          0.2
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.8,
+        "learnedDmMs": 25.6,
+        "next4Ms": [
+          -0.8,
+          -292.0,
+          1.3,
+          -0.7
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 2.7,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.7,
+        "learnedDmMs": 24.9,
+        "next4Ms": [
+          3.1,
+          3.6,
+          2.6,
+          0.5
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 2.7,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.9,
+        "learnedDmMs": 23.4,
+        "next4Ms": [
+          -0.8,
+          0.8,
+          1.6,
+          -1.1
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 0.0,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.3,
+        "learnedDmMs": 26.1,
+        "next4Ms": [
+          -0.5,
+          -0.4,
+          -0.6,
+          -0.5
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 1.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.3,
+        "learnedDmMs": 26.4,
+        "next4Ms": [
+          -1.3,
+          1.6,
+          -2.1,
+          -1.0
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 2.7,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.7,
+        "learnedDmMs": 26.9,
+        "next4Ms": [
+          0.0,
+          2.9,
+          1.1,
+          -1.6
+        ]
+      }
+    ],
+    "0.5x_pre0": [
+      {
+        "countInClicks": 4,
+        "downbeatMs": -36.3,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.1,
+        "learnedDmMs": -8.6,
+        "next4Ms": [
+          19.5,
+          9.9,
+          1.1,
+          -3.8
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": -45.6,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.4,
+        "learnedDmMs": -14.2,
+        "next4Ms": [
+          5.0,
+          -3.7,
+          18.9,
+          9.7
+        ]
+      },
+      {
+        "countInClicks": 5,
+        "downbeatMs": -53.6,
+        "skipped": true,
+        "resyncs": 0,
+        "playLateMs": 1.4,
+        "learnedDmMs": -9.0,
+        "next4Ms": [
+          -2.8,
+          -16.8,
+          2.7,
+          -12.7
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": -47.0,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.1,
+        "learnedDmMs": -14.2,
+        "next4Ms": [
+          -1.5,
+          7.6,
+          -12.1,
+          8.3
+        ]
+      },
+      {
+        "countInClicks": 5,
+        "downbeatMs": -55.0,
+        "skipped": true,
+        "resyncs": 0,
+        "playLateMs": 4.7,
+        "learnedDmMs": -5.0,
+        "next4Ms": [
+          1.2,
+          -8.8,
+          10.6,
+          0.9
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": -41.6,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.6,
+        "learnedDmMs": -12.4,
+        "next4Ms": [
+          17.4,
+          11.0,
+          4.3,
+          -2.6
+        ]
+      }
+    ],
+    "0.5x_pre60": [
+      {
+        "countInClicks": 4,
+        "downbeatMs": 20.5,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 3.8,
+        "learnedDmMs": -11.9,
+        "next4Ms": [
+          10.9,
+          2.2,
+          -6.5,
+          19.3
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 11.2,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.8,
+        "learnedDmMs": -11.6,
+        "next4Ms": [
+          -2.6,
+          -10.0,
+          16.2,
+          8.4
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 8.5,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.4,
+        "learnedDmMs": -8.9,
+        "next4Ms": [
+          -5.1,
+          10.3,
+          -4.6,
+          8.1
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 9.9,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 4.8,
+        "learnedDmMs": -12.2,
+        "next4Ms": [
+          -9.1,
+          6.3,
+          -13.4,
+          7.0
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 7.2,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.4,
+        "learnedDmMs": -7.6,
+        "next4Ms": [
+          -2.4,
+          -12.5,
+          11.9,
+          2.3
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 15.2,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.6,
+        "learnedDmMs": -15.0,
+        "next4Ms": [
+          10.2,
+          3.4,
+          -3.4,
+          -8.9
+        ]
+      }
+    ],
+    "0.5x_pre120": [
+      {
+        "countInClicks": 4,
+        "downbeatMs": 7.2,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.1,
+        "learnedDmMs": -8.9,
+        "next4Ms": [
+          0.3,
+          -7.1,
+          -14.5,
+          11.3
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 13.9,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 1.1,
+        "learnedDmMs": -12.6,
+        "next4Ms": [
+          0.0,
+          -8.7,
+          17.5,
+          9.7
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 11.2,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.4,
+        "learnedDmMs": -10.7,
+        "next4Ms": [
+          -2.4,
+          11.7,
+          -3.3,
+          10.8
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 12.5,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 0.4,
+        "learnedDmMs": -16.6,
+        "next4Ms": [
+          -6.5,
+          7.6,
+          -12.1,
+          8.3
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 4.5,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.4,
+        "learnedDmMs": -13.3,
+        "next4Ms": [
+          -5.1,
+          -13.8,
+          10.6,
+          0.9
+        ]
+      },
+      {
+        "countInClicks": 4,
+        "downbeatMs": 7.2,
+        "skipped": false,
+        "resyncs": 0,
+        "playLateMs": 2.9,
+        "learnedDmMs": -13.4,
+        "next4Ms": [
+          2.2,
+          -3.3,
+          -8.7,
+          -14.2
+        ]
+      }
+    ]
+  },
+  "spike6StartPreRoll05x": {
+    "what": "spikeStartTest(8, beforeBeatMs, 0.5): both start beforeBeatMs of media time before a beat; settle 12 ms + gain 300 at 1x; startAtTarget true = synth at the target then catch-up, false = synth at media position + latency offset",
+    "startAtTarget_pre0": [
+      {
+        "firstGapMs": 7.7,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          7.7,
+          39.5,
+          -2.1,
+          -9.5,
+          -13.1
+        ]
+      },
+      {
+        "firstGapMs": 6.4,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": 4444,
+        "first5Ms": [
+          6.4,
+          21.0,
+          -6.4,
+          16.2,
+          7.0
+        ]
+      },
+      {
+        "firstGapMs": 13.0,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          13.0,
+          33.2,
+          -15.5,
+          4.0,
+          -11.4
+        ]
+      },
+      {
+        "firstGapMs": 7.7,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          7.7,
+          18.5,
+          3.6,
+          -14.7,
+          5.6
+        ]
+      },
+      {
+        "firstGapMs": 14.4,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          14.4,
+          31.9,
+          -10.1,
+          9.3,
+          -0.4
+        ]
+      },
+      {
+        "firstGapMs": 11.7,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          11.7,
+          57.4,
+          4.4,
+          -2.4,
+          -7.9
+        ]
+      },
+      {
+        "firstGapMs": 19.7,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          19.7,
+          25.7,
+          -8.1,
+          0.3,
+          6.9
+        ]
+      },
+      {
+        "firstGapMs": 2.4,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          2.4,
+          23.0,
+          -6.3,
+          -5.9,
+          -5.6
+        ]
+      }
+    ],
+    "startAtTarget_pre120": [
+      {
+        "firstGapMs": 35.2,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          35.2,
+          5.6,
+          -3.1,
+          -11.9,
+          14.0
+        ]
+      },
+      {
+        "firstGapMs": 67.2,
+        "skipped": true,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          67.2,
+          13.4,
+          -12.7,
+          14.9,
+          7.0
+        ]
+      },
+      {
+        "firstGapMs": 71.2,
+        "skipped": true,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          71.2,
+          5.6,
+          7.7,
+          -7.3,
+          6.8
+        ]
+      },
+      {
+        "firstGapMs": 67.2,
+        "skipped": true,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          67.2,
+          2.9,
+          2.3,
+          -16.1,
+          4.3
+        ]
+      },
+      {
+        "firstGapMs": 68.5,
+        "skipped": true,
+        "resyncs": 0,
+        "lockMs": 3784,
+        "first5Ms": [
+          68.5,
+          6.9,
+          -13.8,
+          10.6,
+          0.9
+        ]
+      },
+      {
+        "firstGapMs": 73.9,
+        "skipped": true,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          73.9,
+          18.2,
+          -1.9,
+          -7.4,
+          -12.9
+        ]
+      },
+      {
+        "firstGapMs": 73.9,
+        "skipped": true,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          73.9,
+          28.8,
+          11.4,
+          -11.0,
+          2.3
+        ]
+      },
+      {
+        "firstGapMs": 75.2,
+        "skipped": true,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          75.2,
+          28.8,
+          9.2,
+          -17.2,
+          -11.9
+        ]
+      }
+    ],
+    "compensated_pre120": [
+      {
+        "firstGapMs": -24.8,
+        "skipped": false,
+        "resyncs": 1,
+        "lockMs": null,
+        "first5Ms": [
+          -24.8,
+          -1.1,
+          -8.4,
+          -15.9,
+          11.3
+        ]
+      },
+      {
+        "firstGapMs": 7.2,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          7.2,
+          -6.6,
+          -12.7,
+          13.5,
+          5.7
+        ]
+      },
+      {
+        "firstGapMs": 13.9,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          13.9,
+          0.2,
+          14.3,
+          -0.6,
+          12.1
+        ]
+      },
+      {
+        "firstGapMs": 8.5,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          8.5,
+          -10.5,
+          5.0,
+          -14.7,
+          5.6
+        ]
+      },
+      {
+        "firstGapMs": 15.2,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          15.2,
+          5.6,
+          -5.8,
+          17.3,
+          7.6
+        ]
+      },
+      {
+        "firstGapMs": 4.5,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          4.5,
+          0.8,
+          -4.6,
+          -10.1,
+          -15.6
+        ]
+      },
+      {
+        "firstGapMs": 9.9,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          9.9,
+          11.5,
+          14.1,
+          -8.4,
+          3.7
+        ]
+      },
+      {
+        "firstGapMs": 15.2,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": 4191,
+        "first5Ms": [
+          15.2,
+          16.8,
+          18.5,
+          -10.6,
+          -5.2
+        ]
+      }
+    ],
+    "compensated_pre60": [
+      {
+        "firstGapMs": 1.9,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          1.9,
+          -5.1,
+          -11.1,
+          -18.5,
+          8.7
+        ]
+      },
+      {
+        "firstGapMs": 15.2,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          15.2,
+          0.0,
+          -7.4,
+          18.9,
+          9.7
+        ]
+      },
+      {
+        "firstGapMs": 8.5,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          8.5,
+          -5.1,
+          10.3,
+          -6.0,
+          8.1
+        ]
+      },
+      {
+        "firstGapMs": 8.5,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          8.5,
+          -10.5,
+          5.0,
+          -14.7,
+          5.6
+        ]
+      },
+      {
+        "firstGapMs": 8.5,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          8.5,
+          -1.1,
+          -11.1,
+          13.3,
+          3.6
+        ]
+      },
+      {
+        "firstGapMs": 13.9,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          13.9,
+          7.5,
+          2.1,
+          -3.4,
+          -10.2
+        ]
+      },
+      {
+        "firstGapMs": 9.9,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": null,
+        "first5Ms": [
+          9.9,
+          11.5,
+          14.1,
+          -8.4,
+          3.7
+        ]
+      },
+      {
+        "firstGapMs": 13.9,
+        "skipped": false,
+        "resyncs": 0,
+        "lockMs": 4069,
+        "first5Ms": [
+          13.9,
+          15.5,
+          17.2,
+          -11.9,
+          -6.6
+        ]
+      }
+    ]
+  },
+  "spike6YouTubeStart": {
+    "what": "playground youtube-sync page, second muted hidden YT.Player (by8oyJztzwo, controls 0); per start: seekTo(T), wait, playVideo(), getCurrentTime() sampled ~continuously for 1.5 s, line fitted from 300 ms; fittedStartMs = where the line crosses T (ms after playVideo); then pauseVideo()",
+    "batch1_wait1500": [
+      {
+        "T": 40,
+        "firstChangeMs": 26,
+        "fittedStartMs": 45.2,
+        "rate": 0.9997,
+        "maxDevMs": 1,
+        "playingEventMs": 33.3,
+        "pauseStopMs": 1.7
+      },
+      {
+        "T": 60,
+        "fittedStartMs": -1185.3,
+        "rate": 0.3011,
+        "maxDevMs": 192,
+        "playingEventMs": 273.3,
+        "stalled": true
+      },
+      {
+        "T": 80,
+        "fittedStartMs": 43.8,
+        "rate": 0.9977,
+        "maxDevMs": 1.4,
+        "playingEventMs": 269.9,
+        "pauseStopMs": 1.7
+      },
+      {
+        "T": 100,
+        "fittedStartMs": 45.3,
+        "rate": 0.9995,
+        "maxDevMs": 1.9,
+        "playingEventMs": 267.5,
+        "pauseStopMs": 1.5
+      },
+      {
+        "T": 120,
+        "fittedStartMs": -1027.2,
+        "rate": 0.3235,
+        "maxDevMs": 173.2,
+        "playingEventMs": 268.9,
+        "stalled": true
+      },
+      {
+        "T": 140,
+        "fittedStartMs": 45,
+        "rate": 0.9988,
+        "maxDevMs": 1.2,
+        "playingEventMs": 270.7,
+        "pauseStopMs": 1.4
+      },
+      {
+        "T": 160,
+        "fittedStartMs": 43.7,
+        "rate": 0.9965,
+        "maxDevMs": 2,
+        "playingEventMs": 268,
+        "pauseStopMs": 7.1
+      },
+      {
+        "T": 180,
+        "fittedStartMs": 45.3,
+        "rate": 0.9994,
+        "maxDevMs": 1.3,
+        "playingEventMs": 264.8,
+        "pauseStopMs": 1.6
+      },
+      {
+        "T": 200,
+        "fittedStartMs": 44.3,
+        "rate": 0.9994,
+        "maxDevMs": 1.9,
+        "playingEventMs": 260.1,
+        "pauseStopMs": 1.4
+      },
+      {
+        "T": 220,
+        "fittedStartMs": 46.4,
+        "rate": 1.0003,
+        "maxDevMs": 2.4,
+        "playingEventMs": 271.2,
+        "pauseStopMs": 1.4
+      }
+    ],
+    "batch2_wait3000": [
+      "45 | 44.9 | 1.0005 | 1.5 | 3@2,1@262",
+      "65 | -290 | 0.6314 | 168.8 | 3@2,1@277,2@1009",
+      "85 | 46.3 | 1.0009 | 2 | 3@5,1@256",
+      "105 | 46.4 | 0.9997 | 2.6 | 3@4,1@265",
+      "125 | 42.8 | 0.9975 | 3.3 | 3@2,1@274",
+      "145 | 46.2 | 1.0006 | 1.9 | 3@4,1@260",
+      "165 | 48.2 | 1.0026 | 1.8 | 3@4,1@264",
+      "185 | 44.2 | 0.9986 | 1.7 | 3@4,1@275",
+      "205 | 45.3 | 0.9997 | 1.2 | 3@3,1@258",
+      "225 | 44.7 | 0.9987 | 2.4 | 3@4,1@265"
+    ],
+    "batch2_columns": "T | fittedStartMs | rate | maxDevMs | state events (3=buffering,1=playing,2=paused @ ms after playVideo)"
+  },
+  "spike7PlayBeat": {
+    "what": "api.playBeat (bar 13 beat 1, track 1, 2 notes, 333 ms) clicked 2.5 s after Play. Mixed: sync lab nudgecal, beeps, 1x, settle 12 ms / gain 300; MixSpikePlayer.oneTimeMidiMode = synthOnly (as built) / pauseBoth (option 1) / pauseBothResume (option 2); pauseOnly = baseline api.pause(). audible = beat's track unmuted; otherwise tracks muted, metronome on, and the clicks after Play (pressed 1.5 s later) or after the automatic resume are matched to the media beeps (ms, click - beep). Non-mixed: control demo.",
+    "mixed": {
+      "synthOnlyAudible": [
+        {
+          "states": [],
+          "stateAt1500": "Playing",
+          "mediaAdvancedMs": 1503,
+          "synthOnsetsMs": [
+            10.7
+          ],
+          "mediaBeeps": 3
+        },
+        {
+          "states": [],
+          "stateAt1500": "Playing",
+          "mediaAdvancedMs": 1501,
+          "synthOnsetsMs": [],
+          "mediaBeeps": 3
+        },
+        {
+          "states": [],
+          "stateAt1500": "Playing",
+          "mediaAdvancedMs": 1504,
+          "synthOnsetsMs": [
+            5.4
+          ],
+          "mediaBeeps": 3
+        },
+        {
+          "states": [],
+          "stateAt1500": "Playing",
+          "mediaAdvancedMs": 1499,
+          "synthOnsetsMs": [],
+          "mediaBeeps": 3
+        }
+      ],
+      "synthOnlyNotes": [
+        {
+          "states": [],
+          "stateAt1500": "Playing",
+          "mediaAdvancedMs": 1502,
+          "synthOnsetsMs": [
+            5.3
+          ],
+          "notesPlayed": [
+            "on@6",
+            "on@6"
+          ]
+        },
+        {
+          "states": [],
+          "stateAt1500": "Playing",
+          "mediaAdvancedMs": 1501,
+          "synthOnsetsMs": [],
+          "notesPlayed": []
+        },
+        {
+          "states": [],
+          "stateAt1500": "Playing",
+          "mediaAdvancedMs": 1502,
+          "synthOnsetsMs": [
+            5.4
+          ],
+          "notesPlayed": [
+            "on@8",
+            "on@8"
+          ]
+        }
+      ],
+      "pauseBothAudible": [
+        {
+          "states": [
+            "Paused@0"
+          ],
+          "stateAt1500": "Paused",
+          "mediaAdvancedMs": 0,
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "states": [
+            "Paused@1"
+          ],
+          "stateAt1500": "Paused",
+          "mediaAdvancedMs": 0,
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "states": [
+            "Paused@0"
+          ],
+          "stateAt1500": "Paused",
+          "mediaAdvancedMs": 0,
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "states": [
+            "Paused@1"
+          ],
+          "stateAt1500": "Paused",
+          "mediaAdvancedMs": 0,
+          "synthOnsetsMs": []
+        }
+      ],
+      "pauseBothNotes": [
+        {
+          "states": [
+            "Paused@0"
+          ],
+          "stateAt1500": "Paused",
+          "mediaAdvancedMs": 0,
+          "synthOnsetsMs": [
+            5.4
+          ],
+          "notesPlayed": [
+            "on@11",
+            "on@11"
+          ]
+        },
+        {
+          "states": [
+            "Paused@0"
+          ],
+          "stateAt1500": "Paused",
+          "mediaAdvancedMs": 0,
+          "synthOnsetsMs": [
+            5.4
+          ],
+          "notesPlayed": [
+            "on@8",
+            "on@8"
+          ]
+        },
+        {
+          "states": [
+            "Paused@0"
+          ],
+          "stateAt1500": "Paused",
+          "mediaAdvancedMs": 0,
+          "synthOnsetsMs": [
+            10.7
+          ],
+          "notesPlayed": [
+            "on@12",
+            "on@12"
+          ]
+        }
+      ],
+      "pauseBothClicks": [
+        {
+          "firstGapMs": -3.3,
+          "nextClicksMs": [
+            -3.3,
+            0.3,
+            3.8,
+            2,
+            1.6
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            10.7
+          ]
+        },
+        {
+          "firstGapMs": 2,
+          "nextClicksMs": [
+            2,
+            1.5,
+            1.1,
+            0.6,
+            1.3
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": -6.2,
+          "nextClicksMs": [
+            -6.2,
+            -0.3,
+            4.6,
+            1.5,
+            1.1
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": -1.3,
+          "nextClicksMs": [
+            -1.3,
+            2.2,
+            2,
+            1.5,
+            1
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": 4.5,
+          "nextClicksMs": [
+            4.5,
+            1.4,
+            1,
+            2.1,
+            1.7
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": 55.4,
+          "nextClicksMs": [
+            55.4,
+            2.5,
+            0.5,
+            1.3,
+            2
+          ],
+          "counts": "7/7",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": -0.6,
+          "nextClicksMs": [
+            -0.6,
+            1.6,
+            2.5,
+            0.6,
+            1.6
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": 2,
+          "nextClicksMs": [
+            2,
+            1.5,
+            1.1,
+            0.6,
+            1.3
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": -0.9,
+          "nextClicksMs": [
+            -0.9,
+            1,
+            0.6,
+            0.2,
+            1.1
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": 14.7,
+          "nextClicksMs": [
+            14.7,
+            2.2,
+            2,
+            1.5,
+            1
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            10.7
+          ]
+        },
+        {
+          "firstGapMs": -6.2,
+          "nextClicksMs": [
+            -6.2,
+            0.1,
+            3.7,
+            0.8,
+            0.3
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        },
+        {
+          "firstGapMs": 11.8,
+          "nextClicksMs": [
+            11.8,
+            8.5,
+            1.3,
+            -4.6,
+            -0.9
+          ],
+          "counts": "6/6",
+          "synthOnsetsMs": [
+            5.4
+          ]
+        }
+      ],
+      "pauseBothResumeAudible": [
+        {
+          "states": [
+            "Paused@0",
+            "Playing@394"
+          ],
+          "mediaAdvancedMs": 1109,
+          "synthOnsetsMs": [
+            10.7,
+            512.9,
+            622.7,
+            844.5,
+            1066.7
+          ]
+        },
+        {
+          "states": [
+            "Paused@0",
+            "Playing@392"
+          ],
+          "mediaAdvancedMs": 1112,
+          "synthOnsetsMs": [
+            5.4,
+            404.4,
+            626.7,
+            955.6,
+            1062.7,
+            1281.9
+          ]
+        },
+        {
+          "states": [
+            "Paused@0",
+            "Playing@391"
+          ],
+          "mediaAdvancedMs": 1112,
+          "synthOnsetsMs": [
+            5.4,
+            593.4,
+            813.7,
+            1032,
+            1367.6,
+            1477.4
+          ]
+        },
+        {
+          "states": [
+            "Paused@0",
+            "Playing@391"
+          ],
+          "mediaAdvancedMs": 1108,
+          "synthOnsetsMs": [
+            584,
+            1028,
+            1249.7,
+            1468
+          ]
+        }
+      ],
+      "pauseBothResumeClicks": [
+        {
+          "resumeAfterMs": 386,
+          "firstGapMs": 1.5,
+          "nextClicksMs": [
+            1.5,
+            1.2,
+            0.7,
+            1.6,
+            1.2
+          ],
+          "counts": "8/8"
+        },
+        {
+          "resumeAfterMs": 385,
+          "firstGapMs": 2,
+          "nextClicksMs": [
+            2,
+            1.5,
+            1.1,
+            1.9,
+            1.3
+          ],
+          "counts": "8/8"
+        },
+        {
+          "resumeAfterMs": 385,
+          "firstGapMs": 0.4,
+          "nextClicksMs": [
+            0.4,
+            1,
+            1.9,
+            1.5,
+            1.1
+          ],
+          "counts": "8/8"
+        },
+        {
+          "resumeAfterMs": 385,
+          "firstGapMs": 6.7,
+          "nextClicksMs": [
+            6.7,
+            2.2,
+            -0.7,
+            1.5,
+            1
+          ],
+          "counts": "8/8"
+        },
+        {
+          "resumeAfterMs": 385,
+          "firstGapMs": -0.8,
+          "nextClicksMs": [
+            -0.8,
+            2.8,
+            2.4,
+            0.8,
+            1.7
+          ],
+          "counts": "8/8"
+        },
+        {
+          "resumeAfterMs": 385,
+          "firstGapMs": -0.2,
+          "nextClicksMs": [
+            -0.2,
+            0.5,
+            2.6,
+            2,
+            1.8
+          ],
+          "counts": "9/9"
+        }
+      ],
+      "baselinePauseThenPlay": [
+        {
+          "firstGapMs": 0.7,
+          "nextClicksMs": [
+            0.7,
+            1.6,
+            1.2,
+            2,
+            1.6
+          ],
+          "counts": "6/6"
+        },
+        {
+          "firstGapMs": -0.7,
+          "nextClicksMs": [
+            -0.7,
+            1.5,
+            2.4,
+            1.9,
+            1.3
+          ],
+          "counts": "6/6"
+        },
+        {
+          "firstGapMs": 1.8,
+          "nextClicksMs": [
+            1.8,
+            1,
+            0.6,
+            0.2,
+            1.1
+          ],
+          "counts": "6/6"
+        },
+        {
+          "firstGapMs": 0,
+          "nextClicksMs": [
+            0,
+            0.9,
+            2,
+            1.5,
+            1
+          ],
+          "counts": "6/6"
+        },
+        {
+          "firstGapMs": 12.5,
+          "nextClicksMs": [
+            12.5,
+            -2.6,
+            3.7,
+            2.1,
+            1.7
+          ],
+          "counts": "6/6"
+        },
+        {
+          "firstGapMs": -1.5,
+          "nextClicksMs": [
+            -1.5,
+            -0.8,
+            1.3,
+            2,
+            1.8
+          ],
+          "counts": "6/6"
+        }
+      ]
+    },
+    "nonMixedSynthOnly": [
+      {
+        "mode": "EnabledSynthesizer",
+        "posBeforeMs": 21867,
+        "states": [
+          "Paused@2"
+        ],
+        "stateAt1500": "Paused",
+        "posAt1500Ms": 21963,
+        "posAfterPlay1sMs": 22949,
+        "stateAfterPlay": "Playing"
+      },
+      {
+        "mode": "EnabledSynthesizer",
+        "posBeforeMs": 21989,
+        "states": [
+          "Paused@2"
+        ],
+        "stateAt1500": "Paused",
+        "posAt1500Ms": 22133,
+        "posAfterPlay1sMs": 23125,
+        "stateAfterPlay": "Playing"
+      }
+    ],
+    "nonMixedBackingTrack": [
+      {
+        "speed": 1,
+        "mediaBeforeMs": 22046,
+        "posBeforeMs": 21966,
+        "states": [
+          "Paused@1"
+        ],
+        "mediaSegments": [
+          "160->503 ms (t 13-402)",
+          "22046 ms, paused (t 412-3002)"
+        ],
+        "posAfterMs": 21966,
+        "stateAfter": "Paused"
+      },
+      {
+        "speed": 1,
+        "mediaBeforeMs": 22046,
+        "posBeforeMs": 21966,
+        "states": [
+          "Paused@0"
+        ],
+        "mediaSegments": [
+          "161->506 ms (t 13-402)",
+          "22046 ms, paused (t 412-3003)"
+        ],
+        "posAfterMs": 21966,
+        "stateAfter": "Paused"
+      },
+      {
+        "speed": 2,
+        "mediaBeforeMs": 43906,
+        "posBeforeMs": 21938,
+        "states": [
+          "Paused@0"
+        ],
+        "mediaSegments": [
+          "165->527 ms (t 12-251)",
+          "22018 ms, paused (t 261-3001)"
+        ],
+        "posAfterMs": 10969,
+        "stateAfter": "Paused"
+      },
+      {
+        "speed": 2,
+        "mediaBeforeMs": 43905,
+        "posBeforeMs": 21937,
+        "states": [
+          "Paused@1"
+        ],
+        "mediaSegments": [
+          "165->538 ms (t 13-253)",
+          "22017 ms, paused (t 262-3001)"
+        ],
+        "posAfterMs": 10969,
+        "stateAfter": "Paused"
+      }
+    ]
+  },
+  "spike8Limiter": {
+    "what": "Output limiter settings (spec section 3; review lap 2, finding F-13). Offline Web Audio render (OfflineAudioContext) in the playground page, Chromium 152, macOS, 48 kHz, no alphaTab code. Worst case for clipping: a 20 ms 1 kHz click burst peaking at -11.4 dBFS x synthVolume, its crest on a crest of a 100 Hz 'recording' sine peaking at -2.3 dBFS (both levels from spike 5), clicks at 1 s and 2 s. Per run: peak = output peak (dBFS), over0 = samples over 0 dBFS, recordingOnly = the recording's own peak between clicks (0.5-0.9 s). hotRecording-0.3 = recording peaks at -0.3 dBFS. Script: spike-8-limiter-console.js.",
+    "inputPeakDbfs": {
+      "synthVolume1": 0.31,
+      "synthVolume2": 2.32,
+      "synthVolume3": 3.94
+    },
+    "makeupGainDb": {
+      "note": "Web Audio's automatic make-up gain, knee 0, ratio 20: 0.6 x the gain reduction at 0 dBFS input",
+      "threshold-1": 0.57,
+      "threshold-2": 1.14,
+      "threshold-3": 1.71
+    },
+    "configs": {
+      "none": null,
+      "asSpecified": {
+        "threshold": -1,
+        "ratio": 20,
+        "knee": 30,
+        "attack": 0.003,
+        "release": 0.25,
+        "note": "knee, attack and release are the node's defaults (not set by the spec)"
+      },
+      "proposedHardKnee": {
+        "threshold": -1,
+        "ratio": 20,
+        "knee": 0,
+        "attack": 0.001,
+        "release": 0.1
+      },
+      "spikeOriginal": {
+        "threshold": -3,
+        "ratio": 20,
+        "knee": 0,
+        "attack": 0.001,
+        "release": 0.1,
+        "note": "the spike's limiter (AlphaSynthAudioWorkletOutput.ts)"
+      },
+      "hardKneeTrim": {
+        "threshold": -1,
+        "ratio": 20,
+        "knee": 0,
+        "attack": 0.001,
+        "release": 0.1,
+        "trimDb": -0.57
+      },
+      "minus2": {
+        "threshold": -2,
+        "ratio": 20,
+        "knee": 0,
+        "attack": 0.001,
+        "release": 0.1
+      },
+      "minus2Trim": {
+        "threshold": -2,
+        "ratio": 20,
+        "knee": 0,
+        "attack": 0.001,
+        "release": 0.1,
+        "trimDb": -1.14
+      },
+      "minus3Trim": {
+        "threshold": -3,
+        "ratio": 20,
+        "knee": 0,
+        "attack": 0.001,
+        "release": 0.1,
+        "trimDb": -1.71
+      }
+    },
+    "results": {
+      "none/synthVolume1": {
+        "peak": 0.31,
+        "over0": 14,
+        "recordingOnly": -2.3
+      },
+      "none/synthVolume2": {
+        "peak": 2.32,
+        "over0": 254,
+        "recordingOnly": -2.3
+      },
+      "none/synthVolume3": {
+        "peak": 3.94,
+        "over0": 454,
+        "recordingOnly": -2.3
+      },
+      "none/hotRecording-0.3/synthVolume1": {
+        "peak": 1.83,
+        "over0": 270,
+        "recordingOnly": -0.3
+      },
+      "asSpecified/synthVolume1": {
+        "peak": 0.31,
+        "over0": 14,
+        "recordingOnly": -2.3
+      },
+      "asSpecified/synthVolume2": {
+        "peak": 2.26,
+        "over0": 254,
+        "recordingOnly": -2.3
+      },
+      "asSpecified/synthVolume3": {
+        "peak": 3.79,
+        "over0": 434,
+        "recordingOnly": -2.3
+      },
+      "asSpecified/hotRecording-0.3/synthVolume1": {
+        "peak": 1.79,
+        "over0": 270,
+        "recordingOnly": -0.3
+      },
+      "proposedHardKnee/synthVolume1": {
+        "peak": -0.1,
+        "over0": 0,
+        "recordingOnly": -1.73
+      },
+      "proposedHardKnee/synthVolume2": {
+        "peak": 0.1,
+        "over0": 16,
+        "recordingOnly": -1.73
+      },
+      "proposedHardKnee/synthVolume3": {
+        "peak": 0.26,
+        "over0": 30,
+        "recordingOnly": -1.73
+      },
+      "proposedHardKnee/hotRecording-0.3/synthVolume1": {
+        "peak": 0.07,
+        "over0": 10,
+        "recordingOnly": -0.3
+      },
+      "spikeOriginal/synthVolume1": {
+        "peak": -0.75,
+        "over0": 0,
+        "recordingOnly": -1.16
+      },
+      "spikeOriginal/synthVolume2": {
+        "peak": -0.58,
+        "over0": 0,
+        "recordingOnly": -1.16
+      },
+      "spikeOriginal/synthVolume3": {
+        "peak": -0.38,
+        "over0": 0,
+        "recordingOnly": -1.16
+      },
+      "spikeOriginal/hotRecording-0.3/synthVolume1": {
+        "peak": -0.62,
+        "over0": 0,
+        "recordingOnly": -1.01
+      },
+      "hardKneeTrim/synthVolume1": {
+        "peak": -0.67,
+        "over0": 0,
+        "recordingOnly": -2.3
+      },
+      "hardKneeTrim/synthVolume2": {
+        "peak": -0.47,
+        "over0": 0,
+        "recordingOnly": -2.3
+      },
+      "hardKneeTrim/synthVolume3": {
+        "peak": -0.31,
+        "over0": 0,
+        "recordingOnly": -2.3
+      },
+      "hardKneeTrim/hotRecording-0.3/synthVolume1": {
+        "peak": -0.5,
+        "over0": 0,
+        "recordingOnly": -0.87
+      },
+      "minus2/synthVolume1": {
+        "peak": -0.41,
+        "over0": 0,
+        "recordingOnly": -1.16
+      },
+      "minus2/synthVolume2": {
+        "peak": -0.24,
+        "over0": 0,
+        "recordingOnly": -1.16
+      },
+      "minus2/synthVolume3": {
+        "peak": -0.07,
+        "over0": 0,
+        "recordingOnly": -1.16
+      },
+      "minus2/hotRecording-0.3/synthVolume1": {
+        "peak": -0.27,
+        "over0": 0,
+        "recordingOnly": -0.64
+      },
+      "minus2Trim/synthVolume1": {
+        "peak": -1.55,
+        "over0": 0,
+        "recordingOnly": -2.3
+      },
+      "minus2Trim/synthVolume2": {
+        "peak": -1.38,
+        "over0": 0,
+        "recordingOnly": -2.3
+      },
+      "minus2Trim/synthVolume3": {
+        "peak": -1.21,
+        "over0": 0,
+        "recordingOnly": -2.3
+      },
+      "minus2Trim/hotRecording-0.3/synthVolume1": {
+        "peak": -1.41,
+        "over0": 0,
+        "recordingOnly": -1.78
+      },
+      "minus3Trim/synthVolume1": {
+        "peak": -2.46,
+        "over0": 0,
+        "recordingOnly": -2.87
+      },
+      "minus3Trim/synthVolume2": {
+        "peak": -2.29,
+        "over0": 0,
+        "recordingOnly": -2.87
+      },
+      "minus3Trim/synthVolume3": {
+        "peak": -2.09,
+        "over0": 0,
+        "recordingOnly": -2.87
+      },
+      "minus3Trim/hotRecording-0.3/synthVolume1": {
+        "peak": -2.33,
+        "over0": 0,
+        "recordingOnly": -2.72
+      }
+    }
+  },
+  "spike9ReviewChecks": {
+    "what": "Code checks from the review's second lap (verify step), run 2026-10-08 against today's code on spike/2397-sync-options (develop 25ef76d3 + spike code), no browser. Scripts in spike-9-review-checks/. Write-up: spike-9-review-lap-2-checks.md.",
+    "followWithoutSyncPoints": {
+      "setup": "8 bars 4/4 at 120 BPM (alphaTex), media at 10000 ms; MidiFileSequencer.mainTimePositionFromBackingTrack, and today's BackingTrackPlayer cursor (followmap.ts, cursor.ts)",
+      "rows": [
+        {
+          "syncPoints": "none",
+          "speed": 0.5,
+          "mappingMs": 10000.0,
+          "targetTimesSpeedMs": 5000.0,
+          "cursorTick": 9601,
+          "cursorBar": 3
+        },
+        {
+          "syncPoints": "none",
+          "speed": 1,
+          "mappingMs": 10000.0,
+          "targetTimesSpeedMs": 10000.0,
+          "cursorTick": 19201,
+          "cursorBar": 6
+        },
+        {
+          "syncPoints": "none",
+          "speed": 1.5,
+          "mappingMs": 10000.0,
+          "targetTimesSpeedMs": 15000.0,
+          "cursorTick": 28800,
+          "cursorBar": 8
+        },
+        {
+          "syncPoints": "identity",
+          "speed": 0.5,
+          "mappingMs": 20000.0,
+          "targetTimesSpeedMs": 10000.0,
+          "cursorTick": 19201,
+          "cursorBar": 6
+        },
+        {
+          "syncPoints": "identity",
+          "speed": 1,
+          "mappingMs": 10000.0,
+          "targetTimesSpeedMs": 10000.0,
+          "cursorTick": 19201,
+          "cursorBar": 6
+        },
+        {
+          "syncPoints": "identity",
+          "speed": 1.5,
+          "mappingMs": 6666.7,
+          "targetTimesSpeedMs": 10000.0,
+          "cursorTick": 19201,
+          "cursorBar": 6
+        }
+      ],
+      "expected": "10000 ms = tick 19200 (bar 6) at every speed"
+    },
+    "transportToday": {
+      "setup": "ExternalMediaPlayer (an AlphaSynthBase) with syncpoints-testfile.gp and a fake handler (transport.spike.test.ts, readiness.spike.test.ts)",
+      "playWithCountIn": [
+        "stateChanged(Playing, stopped=false)",
+        "handler.seekTo(0)",
+        "handler.play"
+      ],
+      "playWithCountInState": "Playing, isPlayingCountIn true",
+      "seekWhilePlaying": [
+        "handler.seekTo(4500)"
+      ],
+      "setRangeThenNull": [
+        "handler.seekTo(2000)",
+        "playbackRangeChanged(3840-7680)",
+        "playbackRangeChanged(null)"
+      ],
+      "loopWrap": [
+        "finished",
+        "handler.seekTo(2000)"
+      ],
+      "rangeEndNoLoop": [
+        "finished",
+        "handler.pause",
+        "handler.seekTo(2000)",
+        "stateChanged(Paused, stopped=true)"
+      ],
+      "noSoundFont": "isReadyForPlayback false before the MIDI, true after; isSoundFontLoaded true; 1 readyForPlayback event"
+    },
+    "externalMediaVolumeEcho": {
+      "setup": "fake element queueing volumechange only on a change, wired like alphaTab's external-media sample (volume from handler.masterVolume, volumechange -> api.masterVolume), 300 ms (volume-echo.mjs)",
+      "handlerGetsMasterVolume": {
+        "events": 1,
+        "masterVolumeAfter": 0.8
+      },
+      "handlerGetsMasterTimesBackingTrack035": {
+        "events": 239,
+        "masterVolumeAfter": 8.617e-110
+      },
+      "handlerGetsMasterTimesBackingTrack1": {
+        "events": 1,
+        "masterVolumeAfter": 0.8
+      }
+    },
+    "mediaStallVsAgreementRule": {
+      "setup": "Python model (stall_sim.py): updatePosition every 50 ms frozen during the stall from t=10000 ms; clock = line fit over the last 2 s; stamps every ~50 ms; 3 ms agreement rule; 120 ms locked re-sync; synth at 1x. resyncs: [t ms, agreed drift ms]. triggerOnFitMs = when 'drift grows by more than half the stamp interval' first fires, after the freeze.",
+      "stall3000": {
+        "ols": {
+          "resyncs": [
+            [
+              13673,
+              3292.4
+            ],
+            [
+              14975,
+              -291.8
+            ]
+          ],
+          "maxDriftMs": 3293,
+          "triggerOnFitMs": 316
+        },
+        "theilSen": {
+          "resyncs": [
+            [
+              14480,
+              3001.5
+            ]
+          ],
+          "maxDriftMs": 3572,
+          "triggerOnFitMs": 625
+        },
+        "olsOutlierRejection": {
+          "resyncs": [
+            [
+              13620,
+              3288.3
+            ],
+            [
+              14717,
+              -289.8
+            ]
+          ],
+          "maxDriftMs": 3350,
+          "triggerOnFitMs": 423
+        }
+      },
+      "stall500": {
+        "ols": {
+          "resyncs": [
+            [
+              11570,
+              656.0
+            ],
+            [
+              12473,
+              -155.4
+            ]
+          ],
+          "maxDriftMs": 656,
+          "triggerOnFitMs": 316
+        },
+        "theilSen": {
+          "resyncs": [
+            [
+              11373,
+              610.7
+            ]
+          ],
+          "maxDriftMs": 611,
+          "triggerOnFitMs": 625
+        },
+        "olsOutlierRejection": {
+          "resyncs": [
+            [
+              11517,
+              652.8
+            ],
+            [
+              12219,
+              -154.1
+            ]
+          ],
+          "maxDriftMs": 654,
+          "triggerOnFitMs": 423
+        }
+      }
+    },
+    "fixtureTempos": {
+      "syncpointsTestfile": {
+        "scoreTempos": "120 (bar 0), 60 (bar 4), 80 (bar 8)",
+        "bars": 12,
+        "syncPoints": 9,
+        "repeat": "bars 8-11 x2",
+        "backingTrackSyncBpm": "about 60-240"
+      },
+      "pelados": {
+        "scoreTempos": "135 / 145 (bars 0, 38, 58, 74, 94)",
+        "bars": 119,
+        "syncPoints": 107,
+        "note": "the spike's local song, git-ignored"
+      }
+    }
+  },
+  "spike10BatchOneChecks": {
+    "about": "Spike 10: browser checks for review lap 2, batch 1 (findings F-8, F-12, FYI-4), on today's code (develop @ 25ef76d3 plus the spike code), in the playground control page. Local date 2026-10-09; the timestamp below is UTC.",
+    "script": "docs/spikes/issue-2397/spike-10-batch-1-console.js",
+    "countInHandOffLatenessFromSpike6": {
+      "source": "spike6CountIn rows, playLateMs",
+      "n": 34,
+      "minMs": 0.2,
+      "medianMs": 1.4,
+      "maxMs": 4.8
+    },
+    "raw": {
+      "date": "2026-10-08T13:30:07.635Z",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/2.19675.0 Chrome/152.0.7977.130 Safari/537.36",
+      "f8WorkerFails": {
+        "instanceClass": "AlphaSynthWebWorkerApi",
+        "workerEvents": [
+          {
+            "type": "error",
+            "message": null
+          }
+        ],
+        "apiEvents": [
+          {
+            "t": 0,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          }
+        ],
+        "isReadyForPlayback": false
+      },
+      "f8WorkletFails": {
+        "control": false,
+        "instanceClass": "AlphaSynthWebWorkerApi",
+        "readyAfterMs": 135,
+        "stateAfterPlay": "Playing",
+        "timePositionMsAfter3s": 0,
+        "errorsLogged": [
+          "[AlphaTab][WebAudio] Audio Worklet operation failed: reason=Error: spike 10: worklet module failed"
+        ],
+        "apiEvents": [
+          {
+            "t": 0,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 107,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 108,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 108,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 110,
+            "event": "api.soundFontLoaded"
+          },
+          {
+            "t": 113,
+            "event": "api.playerReady"
+          },
+          {
+            "t": 113,
+            "event": "wrapper.readyForPlayback"
+          },
+          {
+            "t": 135,
+            "event": "api.playerStateChanged",
+            "detail": "Playing"
+          },
+          {
+            "t": 3137,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          }
+        ]
+      },
+      "f8WorkletControl": {
+        "control": true,
+        "instanceClass": "AlphaSynthWebWorkerApi",
+        "readyAfterMs": 136,
+        "stateAfterPlay": "Playing",
+        "timePositionMsAfter3s": 2896,
+        "errorsLogged": [],
+        "apiEvents": [
+          {
+            "t": 0,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 108,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 109,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 109,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 112,
+            "event": "api.soundFontLoaded"
+          },
+          {
+            "t": 114,
+            "event": "api.playerReady"
+          },
+          {
+            "t": 114,
+            "event": "wrapper.readyForPlayback"
+          },
+          {
+            "t": 136,
+            "event": "api.playerStateChanged",
+            "detail": "Playing"
+          },
+          {
+            "t": 3136,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          }
+        ]
+      },
+      "f8SoundFontNetworkError": {
+        "url": "http://127.0.0.1:1/spike-10.sf2",
+        "instanceClass": "AlphaSynthWebWorkerApi",
+        "apiEvents": [
+          {
+            "t": 0,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 103,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 104,
+            "event": "api.error",
+            "detail": ""
+          },
+          {
+            "t": 104,
+            "event": "wrapper.soundFontLoadFailed",
+            "detail": ""
+          },
+          {
+            "t": 104,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 104,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 4037,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          }
+        ],
+        "isReadyForPlayback": false
+      },
+      "f8SoundFontHttp404": {
+        "url": "/font/sonivox/spike-10-missing.sf2",
+        "instanceClass": "AlphaSynthWebWorkerApi",
+        "apiEvents": [
+          {
+            "t": 0,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 112,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 113,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 113,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 114,
+            "event": "api.error",
+            "detail": "Soundfont is not a valid Soundfont2 file"
+          },
+          {
+            "t": 114,
+            "event": "wrapper.soundFontLoadFailed",
+            "detail": "Soundfont is not a valid Soundfont2 file"
+          },
+          {
+            "t": 114,
+            "event": "instance.soundFontLoadFailed",
+            "detail": "Soundfont is not a valid Soundfont2 file"
+          },
+          {
+            "t": 4044,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          }
+        ],
+        "isReadyForPlayback": false
+      },
+      "f12DeviceCalls": {
+        "audioContextHasSetSinkId": true,
+        "externalMedia": {
+          "instanceClass": "ExternalMediaPlayer",
+          "enumerate": [],
+          "setResolves": true,
+          "getAfterSet": null
+        },
+        "synth": {
+          "instanceClass": "AlphaSynthWebWorkerApi",
+          "getOutputDevice": null,
+          "setDefaultResolves": true
+        },
+        "capturedElement": {
+          "setSinkIdResolves": true,
+          "sinkId": ""
+        }
+      },
+      "fyi4LateSoundFont": {
+        "instanceClass": "BackingTrackPlayer",
+        "readyWithoutSoundFontAfterMs": 45,
+        "soundFontSettingAfterApiLoad": null,
+        "instanceLoadSoundFontCalls": [
+          {
+            "bytes": 1351896,
+            "append": false
+          }
+        ],
+        "apiEvents": [
+          {
+            "t": 0,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 39,
+            "event": "api.soundFontLoaded"
+          },
+          {
+            "t": 39,
+            "event": "api.playerReady"
+          },
+          {
+            "t": 39,
+            "event": "wrapper.readyForPlayback"
+          },
+          {
+            "t": 40,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          },
+          {
+            "t": 40,
+            "event": "api.playerReady"
+          },
+          {
+            "t": 40,
+            "event": "wrapper.readyForPlayback"
+          },
+          {
+            "t": 50,
+            "event": "api.soundFontLoaded"
+          },
+          {
+            "t": 50,
+            "event": "api.playerReady"
+          },
+          {
+            "t": 50,
+            "event": "wrapper.readyForPlayback"
+          },
+          {
+            "t": 1552,
+            "event": "api.playerStateChanged",
+            "detail": "Paused"
+          }
+        ]
+      }
+    }
+  },
+  "spike11SpeedChanges": {
+    "about": "Spike 11: speed changes during playback and starts at unlearned speeds (review lap 2, finding F-9), sync lab (mode nudgecal, generated beeps, pelados.gp 135-145 BPM), Chromium 152, 2026-10-09. settleResyncThreshold 12 (15 off 1x), settleNudgeGainMillis 300, media latency at unprobed speeds by straight-line guess.",
+    "sweeps": {
+      "what": "a held tempo sweep: 12 steps of 0.0072x (about 1 BPM) every 250 ms, after 3 s of settled playback; clicks vs beeps from 0 to 2 s after the last step. rule always = re-sync on every speed change (as built); ifDrift = settle only. worker asBuilt = AlphaSynth.updatePlaybackSpeed rescales + seeks in follow mode; keepPosition = spike patch, follow mode keeps its media-time position. p95 equals max with about 10 clicks, so only max is kept.",
+      "rows": [
+        {
+          "worker": "asBuilt",
+          "rule": "always",
+          "fromSpeed": 1,
+          "toSpeed": 0.9136,
+          "resyncs": 15,
+          "driftResyncs": 2,
+          "counts": "10/10",
+          "maxMs": 32.2,
+          "over20": 4,
+          "guess": "line",
+          "steps": 12,
+          "stepSpeed": 0.0072,
+          "stepMs": 250
+        },
+        {
+          "worker": "asBuilt",
+          "rule": "ifDrift",
+          "fromSpeed": 1,
+          "toSpeed": 0.9136,
+          "resyncs": 11,
+          "driftResyncs": 10,
+          "counts": "16/10",
+          "maxMs": 274.1,
+          "over20": 9,
+          "guess": "line",
+          "steps": 12,
+          "stepSpeed": 0.0072,
+          "stepMs": 250
+        },
+        {
+          "worker": "keepPosition",
+          "rule": "ifDrift",
+          "fromSpeed": 1,
+          "toSpeed": 0.9136,
+          "resyncs": 13,
+          "driftResyncs": 12,
+          "counts": "10/10",
+          "maxMs": 45.0,
+          "over20": 6,
+          "guess": "line",
+          "steps": 12,
+          "stepSpeed": 0.0072,
+          "stepMs": 250
+        },
+        {
+          "worker": "keepPosition",
+          "rule": "always",
+          "fromSpeed": 1,
+          "toSpeed": 0.9136,
+          "resyncs": 14,
+          "driftResyncs": 1,
+          "counts": "11/10",
+          "maxMs": 105.3,
+          "over20": 3,
+          "guess": "line",
+          "steps": 12,
+          "stepSpeed": 0.0072,
+          "stepMs": 250
+        },
+        {
+          "worker": "keepPosition",
+          "rule": "ifDrift",
+          "fromSpeed": 0.99,
+          "toSpeed": 0.9036,
+          "resyncs": 12,
+          "driftResyncs": 11,
+          "counts": "10/10",
+          "maxMs": 55.3,
+          "over20": 4,
+          "guess": "line",
+          "steps": 12,
+          "stepSpeed": 0.0072,
+          "stepMs": 250
+        },
+        {
+          "worker": "keepPosition",
+          "rule": "ifDrift",
+          "fromSpeed": 0.75,
+          "toSpeed": 0.8364,
+          "resyncs": 13,
+          "driftResyncs": 12,
+          "counts": "8/8",
+          "maxMs": 41.6,
+          "over20": 2,
+          "guess": "line",
+          "steps": 12,
+          "stepSpeed": 0.0072,
+          "stepMs": 250
+        }
+      ],
+      "driftAfterStepMs": {
+        "asBuilt_ifDrift_1x": "first step +218.8, then +134 ... +356 (synth ahead)",
+        "keepPosition_ifDrift_1x": "+20.4 ... +42.6 after every step (synth ahead)",
+        "keepPosition_ifDrift_0.75x_up": "+15.4 ... +33.2 after every step (synth ahead)"
+      }
+    },
+    "unlearnedStarts": {
+      "what": "compensated start (startAtTarget false) with the start lead learned per speed (spike patch compensatedLeadPerSpeed); first start at a speed with no learned lead, 30 ms before a beat; the speed probed first so only the lead differs. zero = as built; line = straight line between the learned speeds. firstGap = first click minus the first beep (ms).",
+      "date": "2026-10-09T11:39:39.072Z",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Claude/2.19675.0 Chrome/152.0.7977.130 Safari/537.36",
+      "latency": {
+        "1": 0,
+        "0.5": 60,
+        "0.75": 26.6,
+        "1.25": -3.7,
+        "1.5": -4.4,
+        "0.625": 35.2,
+        "0.875": 19.8
+      },
+      "learn": {
+        "1": {
+          "learned": 5.7,
+          "firstGaps": [
+            4.7,
+            4.7
+          ],
+          "resyncs": [
+            0,
+            0
+          ]
+        },
+        "0.5": {
+          "learned": -36,
+          "firstGaps": [
+            -19.4,
+            18
+          ],
+          "resyncs": [
+            1,
+            0
+          ]
+        },
+        "0.75": {
+          "learned": -25.4,
+          "firstGaps": [
+            -6,
+            4.7
+          ],
+          "resyncs": [
+            1,
+            0
+          ]
+        }
+      },
+      "tests": [
+        {
+          "speed": 0.625,
+          "guess": "zero",
+          "usedLead": 0,
+          "firstGap": -12.7,
+          "first": [
+            -12.7,
+            13.4,
+            7.2,
+            6.1,
+            3.9
+          ],
+          "resyncs": 1,
+          "skipped": false,
+          "learnedAfter": -31.7
+        },
+        {
+          "speed": 0.625,
+          "guess": "zero",
+          "usedLead": 0,
+          "firstGap": -7.4,
+          "first": [
+            -7.4,
+            18.7,
+            11.2,
+            8.8,
+            6.5
+          ],
+          "resyncs": 1,
+          "skipped": false,
+          "learnedAfter": -23.3
+        },
+        {
+          "speed": 0.625,
+          "guess": "zero",
+          "usedLead": 0,
+          "firstGap": -12.7,
+          "first": [
+            -12.7,
+            13.4,
+            7.2,
+            4.8,
+            3.9
+          ],
+          "resyncs": 1,
+          "skipped": false,
+          "learnedAfter": -34.3
+        },
+        {
+          "speed": 0.625,
+          "guess": "line",
+          "usedLead": -30.7,
+          "firstGap": 18,
+          "first": [
+            18,
+            9.4,
+            4.6,
+            3.5,
+            1.2
+          ],
+          "resyncs": 0,
+          "skipped": false,
+          "learnedAfter": -28.8
+        },
+        {
+          "speed": 0.625,
+          "guess": "line",
+          "usedLead": -30.7,
+          "firstGap": 18,
+          "first": [
+            18,
+            10.7,
+            4.6,
+            3.5,
+            1.2
+          ],
+          "resyncs": 0,
+          "skipped": false,
+          "learnedAfter": -31.3
+        },
+        {
+          "speed": 0.625,
+          "guess": "line",
+          "usedLead": -30.7,
+          "firstGap": 23.3,
+          "first": [
+            23.3,
+            16,
+            9.9,
+            7.5,
+            5.2
+          ],
+          "resyncs": 0,
+          "skipped": false,
+          "learnedAfter": -29.1
+        },
+        {
+          "speed": 0.875,
+          "guess": "zero",
+          "usedLead": 0,
+          "firstGap": -11.3,
+          "first": [
+            -11.3,
+            7,
+            7.6,
+            8.8,
+            10.1
+          ],
+          "resyncs": 1,
+          "skipped": false,
+          "learnedAfter": -24.3
+        },
+        {
+          "speed": 0.875,
+          "guess": "zero",
+          "usedLead": 0,
+          "firstGap": -6,
+          "first": [
+            -6,
+            -2.3,
+            1,
+            2.1,
+            3.4
+          ],
+          "resyncs": 0,
+          "skipped": false,
+          "learnedAfter": -11.8
+        },
+        {
+          "speed": 0.875,
+          "guess": "zero",
+          "usedLead": 0,
+          "firstGap": -8.7,
+          "first": [
+            -8.7,
+            11,
+            11.6,
+            12.8,
+            12.7
+          ],
+          "resyncs": 1,
+          "skipped": false,
+          "learnedAfter": -18.3
+        },
+        {
+          "speed": 0.875,
+          "guess": "line",
+          "usedLead": -9.8,
+          "firstGap": 4.7,
+          "first": [
+            4.7,
+            7,
+            9,
+            8.8,
+            10.1
+          ],
+          "resyncs": 0,
+          "skipped": false,
+          "learnedAfter": -14
+        },
+        {
+          "speed": 0.875,
+          "guess": "line",
+          "usedLead": -9.8,
+          "firstGap": -0.7,
+          "first": [
+            -0.7,
+            3,
+            5,
+            6.1,
+            7.4
+          ],
+          "resyncs": 0,
+          "skipped": false,
+          "learnedAfter": -21.7
+        },
+        {
+          "speed": 0.875,
+          "guess": "line",
+          "usedLead": -9.8,
+          "firstGap": 4.7,
+          "first": [
+            4.7,
+            7,
+            9,
+            10.1,
+            10.1
+          ],
+          "resyncs": 0,
+          "skipped": false,
+          "learnedAfter": -17.7
+        }
+      ]
+    }
+  }
+}
