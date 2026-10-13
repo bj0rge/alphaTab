@@ -229,7 +229,7 @@ export class MediaSyncController {
      * The re-sync threshold while settling (ms).
      */
     public settleThreshold(speed: number): number {
-        if (speed === 1) {
+        if (PerSpeedValues.key(speed) === 1) {
             return Math.max(MediaSyncConstants.SettleResyncThresholdAt1xMs, 2 * this.baseLatencyMs + 1);
         }
         return MediaSyncConstants.SettleResyncThresholdMs;
@@ -255,7 +255,7 @@ export class MediaSyncController {
         plan.target = target;
         const latency = mediaLatencyMs * speed;
         let synthBase: number;
-        if (speed === 1) {
+        if (PerSpeedValues.key(speed) === 1) {
             // the synth starts at the target, never past it: a positive latency is caught up by the settle nudge
             plan.mediaSeekTo = target;
             synthBase = target + Math.min(0, latency);
@@ -296,7 +296,7 @@ export class MediaSyncController {
      * The media pre-roll (media ms) for a start at `speed`.
      */
     public static preRoll(speed: number, countIn: boolean): number {
-        if (speed === 1) {
+        if (PerSpeedValues.key(speed) === 1) {
             return 0;
         }
         if (countIn && speed < 1) {
@@ -319,6 +319,9 @@ export class MediaSyncController {
         if (!this._active) {
             return;
         }
+        // a start lesson still pending would take the re-sync below for the start
+        this._learnMediaStartLatency = false;
+        this._learnStartLead = false;
         this._settleUntil = this._time.now() + MediaSyncConstants.SettleDurationMs;
         this.resync();
     }
@@ -433,7 +436,7 @@ export class MediaSyncController {
         } else if (this._learnStartLead) {
             action = 'wait';
         } else {
-            action = this._nudge(drift, settling && speed === 1);
+            action = this._nudge(drift, settling && PerSpeedValues.key(speed) === 1);
         }
         this.stats.driftLog?.push(new MediaSyncDriftEntry(now, drift, this._correction, action));
     }

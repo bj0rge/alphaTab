@@ -74,6 +74,16 @@ describe('MediaSyncControllerTests', () => {
         expect(s.synth.seeks).toEqual([12345 + 10]); // the media now + the initial re-sync lead
     });
 
+    it('readings-4-ms-apart-do-not-agree', () => {
+        // §6.2: only readings within 3 ms of each other count as agreed
+        const s = setup();
+        s.controller.startedAfterHandOff(1, true);
+        s.stamp(20);
+        s.stamp(24); // 4 apart: not agreed, so no re-sync (a mean of 22 is above the 12 ms threshold) and no learning
+        expect(s.synth.seeks).toEqual([]);
+        expect(s.controller.mediaStartLatencies.size).toBe(0);
+    });
+
     it('settle-threshold-is-12-ms-at-1x-and-15-elsewhere', () => {
         const { controller } = setup();
         expect(controller.settleThreshold(1)).toBe(12);
@@ -89,6 +99,23 @@ describe('MediaSyncControllerTests', () => {
         controller.baseLatencyMs = 8;
         expect(controller.settleThreshold(1)).toBe(17);
         expect(controller.settleThreshold(0.5)).toBe(15);
+    });
+
+    it('float-noise-around-1x-counts-as-1x', () => {
+        // a tempo sweep that sums its steps lands on 1 - 1e-12, not on 1
+        const noisy = 1 - 1e-12;
+        const { controller } = setup();
+        expect(controller.settleThreshold(noisy)).toBe(controller.settleThreshold(1));
+        expect(MediaSyncController.preRoll(noisy, true)).toBe(0);
+        const plan = controller.planStart(5000, noisy, 3); // 1x: no pre-roll, the latency is a catch-up gap
+        expect(plan.mediaSeekTo).toBe(5000);
+        expect(plan.catchUpGapMs).toBeCloseTo(3, 6);
+
+        const settling = setup();
+        settling.controller.startedAfterHandOff(noisy, false);
+        settling.stamp(3);
+        settling.stamp(3);
+        expect(settling.controller.correction).toBeCloseTo(1 - 3 / 300, 9); // the faster settling nudge of 1x
     });
 
     it('re-syncs-above-the-settle-threshold-while-settling', () => {
@@ -126,6 +153,14 @@ describe('MediaSyncControllerTests', () => {
         const behind = settled();
         behind.stamp(-100);
         expect(behind.controller.correction).toBeCloseTo(1.02, 9);
+    });
+
+    it('the-nudge-averages-the-readings-with-a-30-percent-step', () => {
+        // §6.2: the average starts at the first reading, then moves 30% of the way to each next one
+        const s = settled();
+        s.stamp(30);
+        s.stamp(60); // 30 apart: not agreed, so the nudge acts; the average is 30 + 0.3 * (60 - 30) = 39
+        expect(s.controller.correction).toBeCloseTo(1 - 39 / 3000, 9);
     });
 
     it('settling-nudge-at-1x-is-faster', () => {
@@ -166,6 +201,17 @@ describe('MediaSyncControllerTests', () => {
         expect(s.synth.seeks[s.synth.seeks.length - 1]).toBe(12345 + 6);
     });
 
+    it('the-learned-re-sync-lead-is-clamped-to-100-ms', () => {
+        const s = settled();
+        s.controller.resync();
+        s.time.t += 150;
+        s.stamp(-100); // t = resync + 200: read again
+        s.stamp(-100); // agreed -100: the synth came out 100 ms behind; 10 + 100 would be 110
+        expect(s.controller.stats.resyncLeadMs).toBe(100);
+        s.controller.resync();
+        expect(s.synth.seeks[s.synth.seeks.length - 1]).toBe(12345 + 100);
+    });
+
     it('learns-the-media-start-latency-after-a-hand-off', () => {
         const s = setup();
         s.controller.startedAfterHandOff(1, true);
@@ -178,6 +224,14 @@ describe('MediaSyncControllerTests', () => {
         fast.stamp(3);
         fast.stamp(3);
         expect(fast.controller.mediaStartLatencies.get(1.5)).toBeCloseTo(2, 9);
+    });
+
+    it('the-learned-media-start-latency-is-clamped-to-250-ms', () => {
+        const s = setup();
+        s.controller.startedAfterHandOff(1, true);
+        s.stamp(300);
+        s.stamp(300); // the media started 300 ms late; one start can teach at most 250
+        expect(s.controller.mediaStartLatencies.get(1)).toBe(250);
     });
 
     it('one-late-hand-off-teaches-nothing', () => {
@@ -406,5 +460,30 @@ describe('MediaSyncControllerStartTests', () => {
         expect(s.controller.correction).toBeLessThan(1);
         s.controller.started(s.controller.planStart(5000, 1, 0), false);
         expect(s.controller.correction).toBe(1);
+    });
+
+    it('a-speed-change-before-the-first-agreed-reading-teaches-no-media-start-latency', () => {
+        // the next agreed reading would measure the re-sync, not the media's start
+        const s = setup();
+        s.controller.startedAfterHandOff(1, true);
+        s.stamp(20); // one reading: nothing agreed yet
+        s.controller.speedChanged(0.5);
+        s.time.t += 200; // past the 200 ms the re-sync ignores
+        s.stamp(20);
+        s.stamp(20);
+        expect(s.controller.mediaStartLatencies.size).toBe(0);
+    });
+
+    it('a-speed-change-before-the-start-lead-is-learned-teaches-no-start-lead', () => {
+        // the next readings would measure the re-sync, not the synthesizer's start
+        const s = setup();
+        s.controller.started(s.controller.planStart(5000, 1, 0), true);
+        s.stamp(-8); // one reading of the three
+        s.controller.speedChanged(0.5);
+        s.time.t += 200; // past the 200 ms the re-sync ignores
+        s.stamp(-8);
+        s.stamp(-8);
+        s.stamp(-8);
+        expect(s.controller.startLeads.size).toBe(0);
     });
 });
