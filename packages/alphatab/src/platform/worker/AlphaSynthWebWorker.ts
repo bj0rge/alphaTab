@@ -42,10 +42,11 @@ export class AlphaSynthWebWorker {
             case 'alphaSynth.initialize':
                 AlphaSynthWorkerSynthOutput.preferredSampleRate = data.sampleRate;
                 Logger.logLevel = data.logLevel;
-                this._player = new AlphaSynth(
-                    new AlphaSynthWorkerSynthOutput(this._main),
-                    data.bufferTimeInMilliseconds
-                );
+                {
+                    const output = new AlphaSynthWorkerSynthOutput(this._main);
+                    this._player = new AlphaSynth(output, data.bufferTimeInMilliseconds);
+                    this._player.mediaSampleOutput = output;
+                }
                 this._player.positionChanged.on(e => this.onPositionChanged(e));
                 this._player.stateChanged.on(e => this.onPlayerStateChanged(e));
                 this._player.finished.on(() => this.onFinished());
@@ -56,10 +57,22 @@ export class AlphaSynthWebWorker {
                 this._player.readyForPlayback.on(() => this.onReadyForPlayback());
                 this._player.midiEventsPlayed.on(e => this.onMidiEventsPlayed(e));
                 this._player.playbackRangeChanged.on(e => this.onPlaybackRangeChanged(e));
+                this._player.countInStarted.on(lengthMs =>
+                    this._main.postMessage({ cmd: 'alphaSynth.countInStarted', lengthMs })
+                );
                 this._main.postMessage({
                     cmd: 'alphaSynth.ready'
                 });
 
+                break;
+            case 'alphaSynth.followMedia':
+                this._player.followMedia(data.enabled, data.mediaDuration, data.syncPoints);
+                break;
+            case 'alphaSynth.seekToMediaTime':
+                this._player.seekToMediaTime(data.mediaTime);
+                break;
+            case 'alphaSynth.setRateCorrection':
+                this._player.setRateCorrection(data.factor);
                 break;
             case 'alphaSynth.setLogLevel':
                 Logger.logLevel = data.value;
