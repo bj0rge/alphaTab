@@ -200,4 +200,27 @@ describe('AudioWorkletOutputMediaTests', () => {
         expect(errors.length).toBe(1);
         expect(errors[0].message).toContain('404');
     });
+
+    it('a-throwing-worklet-failed-listener-does-not-wedge-the-operations', async () => {
+        let loadFails = true;
+        BrowserUiFacade.createAlphaSynthAudioWorklet = () =>
+            loadFails ? Promise.reject(new Error('worklet module 404')) : Promise.resolve();
+        const output = openOutput();
+        let raised = 0;
+        output.workletFailed.on(() => {
+            raised++;
+            throw new Error('listener bug');
+        });
+        output.play();
+        await flush();
+        expect(raised).toBe(1);
+        expect(FakeWorkletNode.created.length).toBe(0);
+
+        // the next play loads fine: the queue must still run its operations
+        loadFails = false;
+        output.play();
+        await flush();
+        expect(FakeWorkletNode.created.length).toBe(1);
+        expect(raised).toBe(1);
+    });
 });
