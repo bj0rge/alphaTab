@@ -102,6 +102,20 @@ export interface IAlphaSynth {
     masterVolume: number;
 
     /**
+     * Gets or sets the backing track's own level against the synthesizer (range: 0.0-3.0, default 1.0).
+     * {@link masterVolume} still scales both. Not applied to external media: set your own player's volume.
+     * @since 1.9.0
+     */
+    backingTrackVolume: number;
+
+    /**
+     * Gets or sets the synthesizer's level against the media while it plays along a backing track or external
+     * media (range: 0.0-3.0, default 1.0). Ignored otherwise: {@link masterVolume} already scales a lone synthesizer.
+     * @since 1.9.0
+     */
+    synthVolume: number;
+
+    /**
      * Gets or sets the metronome volume. (range: 0.0-3.0, default 0.0)
      */
     metronomeVolume: number;

@@ -1323,6 +1323,83 @@ export class AlphaTabApiBase<TSettings> {
     }
 
     /**
+     * The backing track's own level against the synthesizer, as percentage (0-3).
+     * @remarks
+     * With {@link PlayerSettings.enableSynthesizerWithMedia} the synthesizer plays along a backing track. At the
+     * default levels the metronome sits about 8 dB under a mastered recording: lower this to bring the metronome or
+     * the synthesized tracks forward (0.35 is about −9 dB). {@link masterVolume} still scales both. Without mixing
+     * it scales the backing track alone. Not applied to external media: set your own player's volume there.
+     * @category Properties - Player
+     * @since 1.9.0
+     * @defaultValue `1`
+     * @example
+     * JavaScript
+     * ```js
+     * const api = new alphaTab.AlphaTabApi(document.querySelector('#alphaTab'));
+     * api.backingTrackVolume = 0.35;
+     * ```
+     *
+     * @example
+     * C#
+     * ```cs
+     * var api = new AlphaTabApi<MyControl>(...);
+     * api.BackingTrackVolume = 0.35;
+     * ```
+     *
+     * @example
+     * Android
+     * ```kotlin
+     * val api = AlphaTabApi<MyControl>(...)
+     * api.backingTrackVolume = 0.35
+     * ```
+     */
+    public get backingTrackVolume(): number {
+        return this._player.backingTrackVolume;
+    }
+
+    public set backingTrackVolume(value: number) {
+        this._player.backingTrackVolume = value;
+    }
+
+    /**
+     * The synthesizer's level against the media, as percentage (0-3).
+     * @remarks
+     * With {@link PlayerSettings.enableSynthesizerWithMedia} the synthesizer plays along a backing track or external
+     * media. Raise this to bring the metronome or the synthesized tracks forward; the output limiter keeps raised
+     * levels from clipping. Ignored without mixing: {@link masterVolume} already scales a lone synthesizer.
+     * @category Properties - Player
+     * @since 1.9.0
+     * @defaultValue `1`
+     * @example
+     * JavaScript
+     * ```js
+     * const api = new alphaTab.AlphaTabApi(document.querySelector('#alphaTab'));
+     * api.synthVolume = 2;
+     * ```
+     *
+     * @example
+     * C#
+     * ```cs
+     * var api = new AlphaTabApi<MyControl>(...);
+     * api.SynthVolume = 2;
+     * ```
+     *
+     * @example
+     * Android
+     * ```kotlin
+     * val api = AlphaTabApi<MyControl>(...)
+     * api.synthVolume = 2
+     * ```
+     */
+    public get synthVolume(): number {
+        return this._player.synthVolume;
+    }
+
+    public set synthVolume(value: number) {
+        this._player.synthVolume = value;
+    }
+
+    /**
      * The metronome volume as percentage (0-1).
      * @remarks
      * Gets or sets the volume of the metronome. By default the metronome is disabled but can be enabled by setting the volume different.
