@@ -320,38 +320,43 @@ describe('FollowMediaSynthTests', () => {
         expect(synth.state).toBe(PlayerState.Playing);
     });
 
-    it('count-in-renders-before-the-song-in-one-stream', async () => {
-        const { midi, syncPoints } = await loadSyncPointSong();
-        const target = syncPoints[2].syncTime;
-        const { output, synthesizer, synth } = createFollowingSynth(midi, syncPoints, 1, target);
-        const bpm = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer.mainSyncBpmAt(target);
-        // the time signature at the start position, as the synthesizer saw it during the seek
-        const beats = synthesizer.timeSignatureNumerator;
-        const beatMs = (60000 / bpm) * (4 / synthesizer.timeSignatureDenominator);
-        const lengths: number[] = [];
-        synth.countInStarted.on(l => lengths.push(l));
-        synth.countInVolume = 1;
-        const resets = output.resetCount;
+    for (const speed of [0.5, 1, 1.5]) {
+        it(`count-in-renders-before-the-song-in-one-stream-${speed}x`, async () => {
+            const { midi, syncPoints } = await loadSyncPointSong();
+            const target = syncPoints[2].syncTime;
+            const { output, synthesizer, synth } = createFollowingSynth(midi, syncPoints, speed, target);
+            const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, speed).sequencer;
+            const bpm = oracle.mainSyncBpmAt(target);
+            // the time signature at the start position, as the synthesizer saw it during the seek
+            const beats = synthesizer.timeSignatureNumerator;
+            const beatMs = (60000 / bpm) * (4 / synthesizer.timeSignatureDenominator);
+            // real time: the bar is played at the playback speed, so it lasts 1 / speed of its length at 1x
+            const barMs = (beats * beatMs) / speed;
+            const lengths: number[] = [];
+            synth.countInStarted.on(l => lengths.push(l));
+            synth.countInVolume = 1;
+            const resets = output.resetCount;
 
-        synth.play();
-        while (output.stampedChunks.length === 0) {
-            output.request();
-        }
+            synth.play();
+            while (output.stampedChunks.length === 0) {
+                output.request();
+            }
 
-        expect(lengths.length).toBe(1);
-        expect(lengths[0]).toBeCloseTo(beats * beatMs, 6); // one bar at the sync point's tempo (§2)
-        const countInFrames = output.chunks.filter(c => c.mediaStart < 0).reduce((s, c) => s + c.frames, 0);
-        expect(countInFrames).toBeGreaterThanOrEqual((lengths[0] / 1000) * 44100);
-        expect(countInFrames).toBeLessThanOrEqual((lengths[0] / 1000) * 44100 + SynthConstants.MicroBufferSize);
-        // the first count-in chunk already tells how far the count-in's end is (Task 7 reports it a bar ahead)
-        expect(Math.abs(output.countInFramesLeft[0] - countInFrames)).toBeLessThanOrEqual(
-            SynthConstants.MicroBufferSize
-        );
-        const first = output.stampedChunks[0];
-        expect(first.countInEnd).toBe(true);
-        expect(first.mediaStart).toBe(target);
-        expect(output.resetCount).toBe(resets); // no buffer reset at the boundary
-    });
+            expect(lengths.length).toBe(1);
+            expect(lengths[0]).toBeCloseTo(barMs, 6); // one bar at the sync point's tempo (§2)
+            const countInFrames = output.chunks.filter(c => c.mediaStart < 0).reduce((s, c) => s + c.frames, 0);
+            expect(countInFrames).toBeGreaterThanOrEqual((barMs / 1000) * 44100);
+            expect(countInFrames).toBeLessThanOrEqual((barMs / 1000) * 44100 + SynthConstants.MicroBufferSize);
+            // the first count-in chunk already tells how far the count-in's end is (Task 7 reports it a bar ahead)
+            expect(Math.abs(output.countInFramesLeft[0] - countInFrames)).toBeLessThanOrEqual(
+                SynthConstants.MicroBufferSize
+            );
+            const first = output.stampedChunks[0];
+            expect(first.countInEnd).toBe(true);
+            expect(first.mediaStart).toBe(target);
+            expect(output.resetCount).toBe(resets); // no buffer reset at the boundary
+        });
+    }
 
     it('count-in-clicks-one-bar-in-the-time-signature', () => {
         const midi = loadTexSong(`

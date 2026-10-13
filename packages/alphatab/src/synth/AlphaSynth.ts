@@ -135,11 +135,6 @@ export class AlphaSynthBase implements IAlphaSynth {
         this.synthesizer.noteOffAll(true);
         const midiTime = this.sequencer.mainMidiTimeFromMediaTime(mediaTime, this._followMediaDuration);
         this.timePosition = Math.max(0, midiTime) / this.sequencer.playbackSpeed;
-        if (!this.sequencer.isPlayingMain) {
-            // the timePosition setter resets the output only while the main song plays
-            this._notPlayedSamples = 0;
-            this.output.resetSamples();
-        }
     }
 
     /**
