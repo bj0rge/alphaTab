@@ -222,4 +222,42 @@ export class BackingTrackPlayer extends AlphaSynthBase {
         this.sequencer.mainUpdateSyncPoints(syncPoints);
         this.tickPosition = this.tickPosition;
     }
+
+    /**
+     * Seeks to a time on the media's own axis (the combined player's handshakes).
+     * @internal
+     */
+    public seekMediaTo(mediaTime: number): void {
+        const timePosition = this.sequencer.mainTimePositionFromBackingTrack(
+            mediaTime,
+            this._backingTrackOutput.backingTrackDuration
+        );
+        this.timePosition = Math.max(0, timePosition);
+        if (timePosition < 0) {
+            // before bar 1 (a recording with a lead-in) the song position is negative, and the seek back from it
+            // would land at media time 0: the cursor waits at the song's start, the media goes to the time itself
+            // (the later seek wins)
+            this._backingTrackOutput.seekTo(mediaTime);
+        }
+    }
+
+    /**
+     * The media time at which the main song reaches `tick` (the spec §4 mapping; without sync points the media
+     * time is the song time).
+     * @internal
+     */
+    public tickToMediaTime(tick: number): number {
+        return this.sequencer.mainTickToMediaTime(tick, this._backingTrackOutput.backingTrackDuration);
+    }
+
+    /**
+     * The media time this player seeks the media to for its current position.
+     * @internal
+     */
+    public get mediaTimeOfPosition(): number {
+        return this.sequencer.mainTimePositionToBackingTrack(
+            this.timePosition,
+            this._backingTrackOutput.backingTrackDuration
+        );
+    }
 }
