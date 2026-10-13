@@ -203,6 +203,11 @@ export class FakeMediaSynth implements IMediaSynth {
     public resetSoundFonts(): void {}
     public loadMidiFile(_midi: MidiFile): void {
         this.calls.push('loadMidiFile');
+        if (this.isReadyForPlayback) {
+            // AlphaSynthWebWorkerApi raises readyForPlayback on midiLoaded too, and never clears its flag: from the
+            // second song on, a song raises it here and again in becomeReadyForPlayback() (the worker's own message)
+            (this.readyForPlayback as EventEmitter).trigger();
+        }
     }
     public loadBackingTrack(_score: Score): void {}
     public updateSyncPoints(_syncPoints: BackingTrackSyncPoint[]): void {}
@@ -235,6 +240,9 @@ export class FakeMediaSynth implements IMediaSynth {
         this.isReady = true;
         (this.ready as EventEmitter).trigger();
     }
+    /**
+     * The worker's own readyForPlayback message.
+     */
     public becomeReadyForPlayback(): void {
         this.isReadyForPlayback = true;
         (this.readyForPlayback as EventEmitter).trigger();
