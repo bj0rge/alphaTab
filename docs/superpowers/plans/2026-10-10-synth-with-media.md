@@ -356,12 +356,15 @@ git commit -m "docs: carry the #2397 spec, plan and spike evidence"
 
 ```bash
 npm install
+npm run generate-typescript
 npm run lint
 npm run typecheck
 npm test
 ```
 
-Expected: all pass. Write the test count into the task's commit message or PR notes; later tasks only add tests.
+Expected: all pass. A fresh worktree has no `packages/alphatab/src/generated/VersionInfo.ts` (it is git-ignored):
+`npm run generate-typescript` creates it and rewrites the tracked generated files unchanged. Write the test count into
+the task's commit message or PR notes; later tasks only add tests.
 
 - [ ] **Step 4: Push**
 
@@ -4988,6 +4991,7 @@ Create `packages/alphatab/test/audio/MediaLatencyProbe.test.ts`:
  */
 import { describe, expect, it, vi } from 'vitest';
 import { MediaLatencyProbe, ProbePoll } from '@coderline/alphatab/platform/javascript/MediaLatencyProbe';
+import { PerSpeedValues } from '@coderline/alphatab/platform/javascript/PerSpeedValues';
 
 describe('MediaLatencyProbeTests', () => {
     it('creates-a-1-second-wav-with-a-beep-every-125-ms', () => {
@@ -5032,7 +5036,7 @@ describe('MediaLatencyProbeTests', () => {
 
     it('background-speeds-and-a-session-cache', () => {
         expect(MediaLatencyProbe.backgroundSpeeds).toEqual([1, 0.5, 0.75, 1.25, 1.5]);
-        expect(MediaLatencyProbe.cache).toBe(MediaLatencyProbe.cache);
+        expect(MediaLatencyProbe.cache).toBeInstanceOf(PerSpeedValues);
     });
 
     it('a-measurement-that-never-loads-gives-up-after-its-time-limit', async () => {
@@ -10899,12 +10903,13 @@ function firstClickToleranceMs(speed: number): number {
 }
 
 function measuringSetup(speed: number) {
-    lab().masterGainNode!.gain.value = 0; // silent, metronome only at full level: fixed tap thresholds
     api.metronomeVolume = 1;
     api.countInVolume = 0;
     api.changeTrackMute(api.score!.tracks, true);
     api.backingTrackVolume = 1;
     api.synthVolume = 1;
+    // after the volumes: each volume setter writes the master gain again
+    lab().masterGainNode!.gain.value = 0; // silent, metronome only at full level: fixed tap thresholds
     api.playbackSpeed = speed;
     lab().enableDriftLog(true);
 }
@@ -10913,9 +10918,9 @@ function restore() {
     api.pause();
     api.isLooping = false;
     api.playbackRange = null;
-    applySound();
     applyMix();
     applyVolumes();
+    applySound(); // last: the volume setters write the master gain
 }
 
 async function waitForProbe(speeds: number[]) {
@@ -11563,7 +11568,9 @@ async function playBeatTest(n = 4, speed = 1) {
     for (let i = 0; i < n; i++) {
         api.pause();
         await sleep(400);
-        api.timePosition = alphaTabTimeForMedia(beatMediaTimes[40 + i * 23] - 500);
+        api.timePosition = alphaTabTimeForMedia(
+            beatMediaTimes[8 + ((i * 23) % Math.max(1, beatMediaTimes.length - 20))] - 500
+        );
         await sleep(300);
         api.play();
         await sleep(2500);
@@ -11659,8 +11666,12 @@ function applyVolumes() {
     api.backingTrackVolume = Number.parseFloat(mediaVolEl.value);
     api.synthVolume = Number.parseFloat(synthVolEl.value);
 }
-mediaVolEl.addEventListener('input', applyVolumes);
-synthVolEl.addEventListener('input', applyVolumes);
+function applyVolumesAndSound() {
+    applyVolumes();
+    applySound(); // the volume setters write the master gain: keep "sound on" as ticked
+}
+mediaVolEl.addEventListener('input', applyVolumesAndSound);
+synthVolEl.addEventListener('input', applyVolumesAndSound);
 
 let tapsReady = false;
 api.playerReady.on(async () => {
@@ -11785,7 +11796,8 @@ git push
 
 **Files:**
 - Create: `docs/spikes/issue-2397/acceptance-<date>.md` (the results, beside the §1 targets)
-- Modify: `docs/spikes/issue-2397/results-<date>.json` (raw numbers: `syncLab.results`)
+- Create (or modify, if that day's file exists): `docs/spikes/issue-2397/results-<date>.json` (raw numbers:
+  `syncLab.results`)
 - Modify: `docs/superpowers/specs/2026-10-07-synth-with-media-design.md` (§1 S6 and S12, §6.4, §9 acceptance, the
   §14 lines this run settles)
 - Modify (only if D-3 Option 2 is picked, Step 4): `packages/alphatab/src/platform/javascript/MediaSyncController.ts`
