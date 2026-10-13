@@ -189,9 +189,13 @@ Inputs: worklet stamps `(frame, synthMediaTime)`, a media clock giving `mediaTim
 | Clock | `mediaTimeAt(frame)` |
 |---|---|
 | Backing track | `currentTime·1000 − (ctx.currentTime − frame/sampleRate)·1000·speed + latency(speed)·speed` |
-| External media | linear fit (robust, last ~2 s) of `updatePosition(ms)` samples mapped to context time via `getOutputTimestamp()`, evaluated at the moment frame F is **heard** (frame time + `outputLatency`), plus `mediaSyncOffsetInMilliseconds` **(untested)** |
+| External media | linear fit (robust, last ~2 s) of `updatePosition(ms)` samples mapped to context time via `getOutputTimestamp()`, evaluated at the moment frame F is **heard** (frame time + `outputLatency`) **(untested)** |
 
-`mediaSyncOffsetInMilliseconds` is applied to both clocks as a final user adjustment (e.g. Bluetooth).
+Both clocks subtract `mediaSyncOffsetInMilliseconds × speed` as a final user adjustment (e.g.
+Bluetooth): a positive value makes the synth play later, in milliseconds of real time at any speed
+(F-11). The external clock stamps each `updatePosition()` sample with the context time being heard
+(`getOutputTimestamp()`) and is read at frame time `F / sampleRate`; that is the moment frame F is
+heard, so `outputLatency` is not added again.
 
 ### 6.4 `MediaLatencyProbe`
 
