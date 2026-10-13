@@ -64,6 +64,40 @@ describe('MediaSynthPlayerRoutingTests', () => {
         expect(h.probe.requests).toEqual([1]);
     });
 
+    it('ready-for-playback-fires-once-per-song-and-waits-for-the-synth', async () => {
+        // today's players fire it once per loaded song, after the song is loaded; mixing keeps that contract
+        const h = new MediaSynthHarness();
+        let ready = 0;
+        h.player.readyForPlayback.on(() => ready++);
+        await h.loadSong(false);
+        h.synth.becomeReady();
+        expect(ready).toBe(0); // the media has the song, the synth does not
+        h.synth.becomeReadyForPlayback();
+        expect(ready).toBe(1);
+
+        await h.loadSong(false); // the next song
+        expect(h.player.isReadyForPlayback).toBe(false); // not before the synth has this one
+        expect(ready).toBe(1);
+        h.synth.becomeReadyForPlayback();
+        expect(h.player.isReadyForPlayback).toBe(true);
+        expect(ready).toBe(2);
+    });
+
+    it('in-the-media-only-fallback-each-song-is-ready-with-the-media', async () => {
+        // readiness follows the media alone there: no wait for a synthesizer that is gone
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        let ready = 0;
+        h.player.readyForPlayback.on(() => ready++);
+        await h.loadSong(false);
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        warning.mockRestore();
+        expect(ready).toBe(1);
+        await h.loadSong(false);
+        expect(h.player.isReadyForPlayback).toBe(true);
+        expect(ready).toBe(2);
+    });
+
     it('probe-waits-for-a-running-context', async () => {
         // Review Focus 3: the autoplay policy keeps the context suspended until a gesture
         const h = new MediaSynthHarness();
@@ -163,6 +197,55 @@ describe('MediaSynthPlayerRoutingTests', () => {
         expect(h.player.isReadyForPlayback).toBe(true);
         h.synth.becomeReadyForPlayback(); // a later SoundFont works: mixing again
         expect(h.synthOutput.warmUps).toBe(1);
+    });
+
+    it('a-worker-failure-after-a-soundfont-failure-is-permanent', async () => {
+        // a SoundFont loaded later ends a fallback that a SoundFont caused, not one that the worker caused
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        let ready = 0;
+        h.player.readyForPlayback.on(() => ready++);
+        await h.loadSong(false);
+        h.synth.becomeReady();
+        (h.player.soundFontLoadFailed as EventEmitterOfT<Error>).trigger(new Error('connection refused'));
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        h.synth.becomeReadyForPlayback(); // a good SoundFont reaches the worker anyway
+        warning.mockRestore();
+        expect(h.player.isReadyForPlayback).toBe(true);
+        expect(ready).toBe(1); // once for the song, when the SoundFont failure made the media ready
+        expect(h.synthOutput.warmUps).toBe(0);
+        expect(h.probe.requests).toEqual([]);
+        h.player.play();
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        expect(h.synth.count('play')).toBe(0);
+    });
+
+    it('a-worklet-failure-after-a-soundfont-failure-is-permanent', async () => {
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        await h.loadSong(false);
+        h.synth.becomeReady();
+        (h.player.soundFontLoadFailed as EventEmitterOfT<Error>).trigger(new Error('connection refused'));
+        h.synthOutput.fail('Audio Worklet operation failed');
+        h.synth.becomeReadyForPlayback();
+        warning.mockRestore();
+        expect(h.player.isReadyForPlayback).toBe(true);
+        expect(h.synthOutput.warmUps).toBe(0);
+        expect(h.probe.requests).toEqual([]);
+    });
+
+    it('a-soundfont-failure-after-a-worker-failure-changes-nothing', async () => {
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness();
+        await h.loadSong(false);
+        h.synth.becomeReady();
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        (h.player.soundFontLoadFailed as EventEmitterOfT<Error>).trigger(new Error('connection refused'));
+        h.synth.becomeReadyForPlayback();
+        warning.mockRestore();
+        expect(h.player.isReadyForPlayback).toBe(true);
+        expect(h.synthOutput.warmUps).toBe(0);
+        expect(h.probe.requests).toEqual([]);
     });
 
     it('volumes-go-to-the-gains', async () => {
