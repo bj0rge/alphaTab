@@ -6,8 +6,12 @@ import { MidiFile } from '@coderline/alphatab/midi/MidiFile';
 import { MidiFileGenerator } from '@coderline/alphatab/midi/MidiFileGenerator';
 import { MidiUtils } from '@coderline/alphatab/midi/MidiUtils';
 import { Settings } from '@coderline/alphatab/Settings';
+import { AlphaSynthBase } from '@coderline/alphatab/synth/AlphaSynth';
 import type { BackingTrackSyncPoint } from '@coderline/alphatab/synth/IAlphaSynth';
 import { MidiFileSequencer } from '@coderline/alphatab/synth/MidiFileSequencer';
+import { PlayerState } from '@coderline/alphatab/synth/PlayerState';
+import { SynthConstants } from '@coderline/alphatab/synth/SynthConstants';
+import { FollowTestOutput } from 'test/audio/FollowTestOutput';
 import { RecordingAudioSynthesizer } from 'test/audio/RecordingAudioSynthesizer';
 import { TestPlatform } from 'test/TestPlatform';
 
@@ -151,5 +155,159 @@ describe('FollowMediaTests', () => {
         syncTempo.startCountIn(90);
         expect(syncTempo.currentTempo).toBe(90);
         expect(syncTempo.currentEndTime).toBeCloseTo((3 * 60000) / 90, 6);
+    });
+});
+
+const MicroBufferMs = (SynthConstants.MicroBufferSize / 44100) * 1000;
+
+function createFollowingSynth(midi: MidiFile, syncPoints: BackingTrackSyncPoint[], speed: number, startMedia: number) {
+    const output = new FollowTestOutput();
+    const synthesizer = new RecordingAudioSynthesizer();
+    const synth = new AlphaSynthBase(output, synthesizer, 500);
+    synth.mediaSampleOutput = output;
+    synth.loadMidiFile(midi);
+    synth.playbackSpeed = speed;
+    synth.followMedia(true, MediaDuration, syncPoints);
+    synth.seekToMediaTime(startMedia);
+    synthesizer.events.length = 0;
+    synthesizer.synthesizeCalls = 0;
+    return { output, synthesizer, synth };
+}
+
+function renderUntil(output: FollowTestOutput, mediaTime: number) {
+    while (
+        output.stampedChunks.length === 0 ||
+        output.stampedChunks[output.stampedChunks.length - 1].mediaEnd < mediaTime
+    ) {
+        output.request();
+    }
+}
+
+describe('FollowMediaSynthTests', () => {
+    for (const withSyncPoints of [true, false]) {
+        for (const speed of [0.5, 1, 1.5]) {
+            it(`dispatches-events-at-their-media-time-${withSyncPoints ? 'sync-points' : 'no-sync-points'}-${speed}x`, async () => {
+                const { midi, syncPoints } = await loadSyncPointSong();
+                const points = withSyncPoints ? syncPoints : [];
+                const { output, synthesizer, synth } = createFollowingSynth(midi, points, speed, 0);
+                synth.play();
+                renderUntil(output, 20000);
+
+                const oracle = createSequencer(
+                    midi,
+                    withSyncPoints ? (await loadSyncPointSong()).syncPoints : [],
+                    speed
+                ).sequencer;
+                const ends = output.microBufferEnds();
+                const step = MicroBufferMs * speed;
+                let checked = 0;
+                for (const recorded of synthesizer.events) {
+                    const e = recorded.synthEvent;
+                    if (!e.isMetronome && e.event?.type !== MidiEventType.NoteOn) {
+                        continue;
+                    }
+                    // the media time the event belongs to (the cursor's inverse mapping; none: song time = media time)
+                    const expected = withSyncPoints
+                        ? oracle.mainTimePositionToBackingTrack(e.time / speed, MediaDuration)
+                        : e.time;
+                    const dispatchedAt = ends[recorded.microBuffer];
+                    expect(dispatchedAt - expected).toBeGreaterThanOrEqual(-1e-3);
+                    expect(dispatchedAt - expected).toBeLessThanOrEqual(step + 1e-3);
+                    checked++;
+                }
+                expect(checked).toBeGreaterThan(10);
+            });
+        }
+    }
+
+    it('chunk-stamps-are-continuous', async () => {
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const { output, synth } = createFollowingSynth(midi, syncPoints, 1.5, 1000);
+        synth.play();
+        renderUntil(output, 3000);
+        const chunks = output.stampedChunks;
+        expect(chunks[0].mediaStart).toBe(1000);
+        for (let i = 1; i < chunks.length; i++) {
+            expect(chunks[i].mediaStart).toBeCloseTo(chunks[i - 1].mediaEnd, 9);
+            expect(chunks[i].mediaPerFrame).toBeCloseTo((1000 / 44100) * 1.5, 12);
+        }
+    });
+
+    it('rate-correction-scales-the-media-step', async () => {
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const { output, synth } = createFollowingSynth(midi, syncPoints, 1, 0);
+        synth.play();
+        output.request();
+        synth.setRateCorrection(1.02);
+        output.request();
+        const chunks = output.stampedChunks;
+        expect(chunks[1].mediaPerFrame).toBeCloseTo((1000 / 44100) * 1.02, 12);
+        expect(chunks[1].mediaStart).toBeCloseTo(chunks[0].mediaEnd, 9);
+    });
+
+    it('seek-to-media-time-restarts-the-stamps', async () => {
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const { output, synth } = createFollowingSynth(midi, syncPoints, 1, 0);
+        synth.play();
+        output.request();
+        const resets = output.resetCount;
+        synth.seekToMediaTime(20000);
+        expect(output.resetCount).toBe(resets + 1);
+        output.request();
+        const chunks = output.stampedChunks;
+        expect(chunks[chunks.length - 1].mediaStart).toBe(20000);
+        const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer;
+        expect(synth.timePosition).toBeCloseTo(oracle.mainMidiTimeFromMediaTime(20000, MediaDuration), 6);
+    });
+
+    it('played-position-follows-the-played-frames', async () => {
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const { output, synth } = createFollowingSynth(midi, syncPoints, 1, 0);
+        synth.play();
+        output.request();
+        output.played(1000);
+        const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer;
+        expect(synth.timePosition).toBeCloseTo(
+            oracle.mainMidiTimeFromMediaTime((1000 * 1000) / 44100, MediaDuration),
+            6
+        );
+    });
+
+    it('speed-change-while-following-keeps-the-media-position', async () => {
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const { output, synth } = createFollowingSynth(midi, syncPoints, 1, 0);
+        synth.play();
+        output.request();
+        output.request();
+        const lastEnd = output.stampedChunks[1].mediaEnd;
+        const resets = output.resetCount;
+        synth.playbackSpeed = 0.75; // G-1 (spike 11 §1): no rescale and seek while following
+        expect(output.resetCount).toBe(resets);
+        output.request();
+        const chunk = output.stampedChunks[2];
+        expect(chunk.mediaStart).toBeCloseTo(lastEnd, 9);
+        expect(chunk.mediaPerFrame).toBeCloseTo((1000 / 44100) * 0.75, 12);
+    });
+
+    it('keeps-following-after-the-song-ends', async () => {
+        // Review Focus 1: a backing track with an outro after the last bar
+        const { midi, syncPoints } = await loadSyncPointSong();
+        const oracle = createSequencer(midi, (await loadSyncPointSong()).syncPoints, 1).sequencer;
+        const songEnd = oracle.mainTickToMediaTime(oracle.currentEndTick, MediaDuration);
+        const { output, synth } = createFollowingSynth(midi, syncPoints, 1, songEnd - 50);
+        let finished = 0;
+        synth.finished.on(() => finished++);
+        synth.play();
+        for (let i = 0; i < 5; i++) {
+            output.request();
+            output.played(output.chunks[output.chunks.length - 1].frames);
+        }
+        const chunks = output.stampedChunks;
+        expect(chunks.length).toBe(5);
+        for (let i = 1; i < chunks.length; i++) {
+            expect(chunks[i].mediaStart).toBeCloseTo(chunks[i - 1].mediaEnd, 9);
+        }
+        expect(finished).toBe(0);
+        expect(synth.state).toBe(PlayerState.Playing);
     });
 });
