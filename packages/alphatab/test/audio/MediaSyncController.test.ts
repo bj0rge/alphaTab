@@ -246,3 +246,165 @@ describe('MediaSyncControllerTests', () => {
         expect(s.controller.stats.driftLog.length).toBe(1);
     });
 });
+
+describe('MediaSyncControllerStartTests', () => {
+    it('start-at-1x-is-at-the-target-never-past-it', () => {
+        const { controller } = setup();
+        let plan = controller.planStart(5000, 1, 0);
+        expect([plan.mediaSeekTo, plan.synthSeekTo, plan.mediaDelayMs, plan.catchUpGapMs]).toEqual([5000, 5000, 0, 0]);
+
+        plan = controller.planStart(5000, 1, 3); // a positive latency at 1x: caught up, never pre-rolled past
+        expect([plan.synthSeekTo, plan.catchUpGapMs]).toEqual([5000, 3]);
+
+        controller.startLeads.set(1, 8); // the synth is slower: delay the media
+        plan = controller.planStart(5000, 1, 0);
+        expect([plan.synthSeekTo, plan.mediaDelayMs]).toEqual([5000, 8]);
+
+        controller.startLeads.set(1, -6); // the media is slower: the synth starts earlier in the song
+        plan = controller.planStart(5000, 1, 0);
+        expect([plan.synthSeekTo, plan.mediaDelayMs]).toEqual([4994, 0]);
+    });
+
+    it('start-at-other-speeds-pre-rolls-and-starts-the-synth-where-the-media-is-heard', () => {
+        const { controller } = setup();
+        let plan = controller.planStart(5000, 0.5, 60); // spec §6.4: 0.5x latency 60 ms
+        expect(plan.mediaSeekTo).toBe(4940);
+        expect(plan.synthSeekTo).toBe(4940 + 60 * 0.5);
+        expect(plan.synthSeekTo).toBeLessThan(5000);
+        plan = controller.planStart(5000, 1.5, -4);
+        expect(plan.mediaSeekTo).toBe(4940);
+        expect(plan.synthSeekTo).toBeCloseTo(4940 - 6, 9);
+    });
+
+    it('the-pre-roll-stops-at-the-media-start', () => {
+        // a start near media time 0 (a recording whose bar 1 is at its very start: Play from the start, a loop from
+        // bar 1): the media can't seek below 0
+        const { controller } = setup();
+        let plan = controller.planStart(0, 0.5, 60);
+        expect(plan.mediaSeekTo).toBe(0);
+        expect(plan.synthSeekTo).toBe(60 * 0.5); // where the media is first heard
+        plan = controller.planStart(30, 1.5, 0);
+        expect([plan.mediaSeekTo, plan.synthSeekTo]).toEqual([0, 0]);
+    });
+
+    it('an-unlearned-speed-uses-the-straight-line-guess', () => {
+        // F-9a, spike 11 §2
+        const { controller } = setup();
+        controller.startLeads.set(0.5, -36);
+        controller.startLeads.set(0.75, -25.4);
+        controller.startLeads.set(1, 5.7);
+        const plan = controller.planStart(5000, 0.625, 0);
+        expect(plan.synthSeekTo).toBeCloseTo(4940 - 30.7 * 0.625, 6);
+        expect(plan.mediaDelayMs).toBe(0);
+    });
+
+    it('learns-the-start-lead-from-the-median-of-the-first-three-readings', () => {
+        const s = setup();
+        s.controller.started(s.controller.planStart(5000, 1, 0), true);
+        s.stamp(-4);
+        s.stamp(-6);
+        expect(s.synth.corrections).toEqual([]); // waiting for three readings
+        s.stamp(-5); // median -5: the synth started 5 ms behind
+        expect(s.controller.startLeads.get(1)).toBe(5);
+    });
+
+    it('start-lead-is-per-speed-and-clamped', () => {
+        const s = setup();
+        s.controller.started(s.controller.planStart(5000, 0.5, 0), true);
+        s.stamp(-14);
+        s.stamp(-14.5);
+        s.stamp(-14.2);
+        expect(s.controller.startLeads.get(0.5)).toBeCloseTo(14.2 / 0.5, 9);
+        expect(s.controller.startLeads.has(1)).toBe(false);
+
+        const far = setup();
+        far.controller.started(far.controller.planStart(5000, 0.5, 0), true);
+        far.stamp(-200);
+        far.stamp(-201);
+        expect(far.controller.startLeads.get(0.5)).toBe(150); // G-4 clamp
+    });
+
+    it('a-re-sync-before-three-readings-learns-from-the-agreed-offset', () => {
+        const s = setup();
+        s.controller.started(s.controller.planStart(5000, 1, 0), true);
+        s.stamp(20);
+        s.stamp(21); // 20.5 > 12 while settling
+        expect(s.synth.seeks.length).toBe(1);
+        expect(s.controller.startLeads.get(1)).toBeCloseTo(-20.5, 9);
+    });
+
+    it('one-late-start-teaches-nothing', () => {
+        const s = setup();
+        const start = (offset: number) => {
+            s.time.t += 5000;
+            s.controller.started(s.controller.planStart(5000, 1, 0), true);
+            s.stamp(offset);
+            s.stamp(offset);
+            s.stamp(offset);
+        };
+        start(-5); // the first start at a speed learns at once: the synth was 5 ms behind
+        expect(s.controller.startLeads.get(1)).toBe(5);
+        start(200); // the media started 200 ms late, once: the synth ran ahead
+        expect(s.controller.startLeads.get(1)).toBe(5);
+        start(0);
+        expect(s.controller.startLeads.get(1)).toBe(5);
+        start(-20); // the synth now comes out 20 ms later: one start doesn't move it
+        expect(s.controller.startLeads.get(1)).toBe(5);
+        start(-20); // two in a row that agree do
+        expect(s.controller.startLeads.get(1)).toBe(25);
+    });
+
+    it('the-catch-up-gap-raises-the-settle-threshold-until-caught-up', () => {
+        const s = setup();
+        s.controller.started(s.controller.planStart(5000, 1, 10), false); // gap 10 ms
+        s.stamp(-15);
+        s.stamp(-15.5); // |-15.25| < 12 + 10: nudge (speed up), no re-sync
+        expect(s.synth.seeks).toEqual([]);
+        expect(s.controller.correction).toBeGreaterThan(1);
+        s.stamp(-1);
+        s.stamp(-1.5); // caught up (within 2 ms): the gap no longer counts
+        s.stamp(-13);
+        s.stamp(-13.5); // 13.25 > 12
+        expect(s.synth.seeks.length).toBe(1);
+    });
+
+    it('the-media-delay-is-ignored-until-the-media-starts', () => {
+        const s = setup();
+        s.controller.startLeads.set(1, 100);
+        s.controller.started(s.controller.planStart(5000, 1, 0), false);
+        s.stamp(500);
+        s.stamp(500); // within the 100 ms media delay
+        expect(s.synth.seeks).toEqual([]);
+    });
+
+    it('hand-off-play-time-subtracts-the-latency-and-the-pre-roll', () => {
+        const { controller } = setup();
+        controller.mediaStartLatencies.set(0.5, 20);
+        expect(controller.handOffPlayTime(96000, 48000, 0.5, 120)).toBeCloseTo(2 - (20 + 240) / 1000, 12);
+    });
+
+    it('pre-roll-rules', () => {
+        expect(MediaSyncController.preRoll(1, true)).toBe(0);
+        expect(MediaSyncController.preRoll(1, false)).toBe(0);
+        expect(MediaSyncController.preRoll(1.5, true)).toBe(60);
+        expect(MediaSyncController.preRoll(1.25, false)).toBe(60);
+        expect(MediaSyncController.preRoll(0.5, false)).toBe(60);
+        expect(MediaSyncController.preRoll(0.5, true)).toBe(120); // F-14 (D-3)
+    });
+
+    it('latency-change-settles-without-resync', () => {
+        // F-9a probe part (D-1)
+        const s = settled();
+        s.controller.latencyChanged();
+        expect(s.controller.isSettling).toBe(true);
+        expect(s.synth.seeks).toEqual([]);
+    });
+
+    it('a-start-resets-the-correction', () => {
+        const s = settled();
+        s.stamp(30);
+        expect(s.controller.correction).toBeLessThan(1);
+        s.controller.started(s.controller.planStart(5000, 1, 0), false);
+        expect(s.controller.correction).toBe(1);
+    });
+});
