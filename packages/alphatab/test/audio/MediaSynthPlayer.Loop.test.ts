@@ -2,7 +2,8 @@
  * The playback range and the loop wrap (spec §6.2).
  * @target web
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Logger } from '@coderline/alphatab/Logger';
 import { PlaybackRange } from '@coderline/alphatab/synth/PlaybackRange';
 import { MediaSynthHarness } from 'test/audio/MediaSyncFakes';
 
@@ -154,5 +155,121 @@ describe('MediaSynthPlayerLoopTests', () => {
         h.player.play();
         h.player.destroy();
         expect(h.timer.pending).toBe(0);
+    });
+
+    it('a-pause-or-a-stop-cancels-the-wrap', async () => {
+        for (const interrupt of ['pause', 'stop'] as const) {
+            const { h, start, end } = await looping();
+            h.player.play();
+            run(h, 100);
+            h.player[interrupt]();
+            expect(h.timer.pending).toBe(0);
+            run(h, end - start + 100);
+            expect(h.finished).toBe(0);
+        }
+    });
+
+    it('a-seek-drops-the-wrap-until-the-media-has-seeked', async () => {
+        const { h } = await looping();
+        h.player.play();
+        h.backingClock!.isSeeking = true; // the <audio> takes a moment to seek
+        h.player.tickPosition = EndTick - 480; // 125 ms before the range end
+        expect(h.timer.pending).toBe(0);
+        h.backingClock!.finishSeek();
+        run(h, 200);
+        expect(h.finished).toBe(1);
+    });
+
+    it('a-speed-change-while-playing-times-the-wrap-at-the-new-speed', async () => {
+        const { h, start, end } = await looping();
+        const heard: number[] = [];
+        h.player.finished.on(() => heard.push(h.mediaOutput!.currentTime));
+        h.player.play();
+        run(h, 100);
+        h.player.playbackSpeed = 2; // the timer was set for 1x: at twice the speed the end comes in half the time
+        run(h, (end - start - 100) / 2 + 100);
+        expect(heard.length).toBe(1);
+        expect(heard[0]).toBeLessThanOrEqual(end - 15);
+        expect(heard[0]).toBeGreaterThan(end - 60);
+    });
+
+    it('turning-looping-on-while-playing-arms-the-wrap', async () => {
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        const songEnd = h.media.tickToMediaTime(h.media.loadedMidiInfo!.endTick);
+        h.mediaOutput!.currentTime = songEnd - 300;
+        h.player.play(); // not looping: the media's own end would stop both
+        h.player.isLooping = true;
+        run(h, 400);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        expect(h.mediaOutput!.currentTime).toBeLessThan(200);
+    });
+
+    it('the-media-alone-wraps-too', async () => {
+        // no SoundFont: the media plays alone (§6.1), and its start arms the wrap
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = new MediaSynthHarness(false, false);
+        warning.mockRestore();
+        await h.loadSong(false);
+        h.player.isLooping = true;
+        const range = new PlaybackRange();
+        range.startTick = StartTick;
+        range.endTick = EndTick;
+        h.player.playbackRange = range;
+        const start = h.media.tickToMediaTime(StartTick);
+        const end = h.media.tickToMediaTime(EndTick);
+        h.player.play();
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        expect(h.synth.count('play')).toBe(0);
+    });
+
+    it('a-count-in-time-limit-still-wraps', async () => {
+        // the count-in's end never comes: the media starts alone at the time limit, and that start arms the wrap
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const { h, start, end } = await looping();
+        h.player.countInVolume = 1;
+        h.player.play(); // counts in
+        h.synth.startCountIn(2000);
+        h.timer.advance(2300); // past the count-in's length and the time limit's extra 250 ms
+        warning.mockRestore();
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+    });
+
+    it('a-synth-failure-during-the-count-in-still-wraps', async () => {
+        // the count-in is the synthesizer's alone: the media plays alone from the failure on, and that start arms the
+        // wrap like any other
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const { h, start, end } = await looping();
+        h.player.countInVolume = 1;
+        h.player.play(); // counts in
+        h.synth.startCountIn(2000);
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        warning.mockRestore();
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        expect(h.mediaOutput!.currentTime).toBeLessThan(start + 200);
+    });
+
+    it('a-synth-failure-while-the-media-seeks-still-wraps', async () => {
+        // the synthesizer is lost between Play and the end of the media's seek: only the media's half of the start
+        // runs, and it arms the wrap
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const { h, start, end } = await looping();
+        h.backingClock!.isSeeking = true; // the <audio> is still seeking when Play comes
+        h.player.play();
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        warning.mockRestore();
+        h.backingClock!.finishSeek();
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
     });
 });
