@@ -1196,7 +1196,8 @@ async function firstPlayAtUnprobedSpeedTest(speeds: number[], beforeBeatMs = 30)
 /**
  * D-1 (F-9a): a probe value lands while a loop plays at an unprobed speed. forcedResync = true runs the spec's
  * current rule (re-sync on arrival) for comparison. Both arms start from a speed never played before: no probe value
- * and no learned start lead. `resyncsAfterArrival` counts the 2 s that `clicksAfterMs` covers.
+ * and no learned start lead. Each arm first sets the speed away to 1x, so in both the change to the arm's speed, about
+ * 300 ms before Play, queues that speed's probe. `resyncsAfterArrival` counts the 2 s that `clicksAfterMs` covers.
  */
 async function probeMidPlaybackTest(speed = 0.875, forcedResync = false) {
     const sr = ctx().sampleRate;
@@ -1209,6 +1210,11 @@ async function probeMidPlaybackTest(speed = 0.875, forcedResync = false) {
                 controller.resync();
             };
         }
+        if (speed !== 1) {
+            // the first arm leaves its speed set: from 1x, measuringSetup's speed change queues this speed's probe in
+            // both arms alike
+            api.playbackSpeed = 1;
+        }
         lab().forgetProbeLatency(speed);
         lab().forgetStartLead(speed);
         measuringSetup(speed);
@@ -1219,7 +1225,7 @@ async function probeMidPlaybackTest(speed = 0.875, forcedResync = false) {
         const probesBefore = lab().probes.length;
         const playFrame = ctx().currentTime * sr;
         const playT = performance.now();
-        api.play(); // queues this speed's probe first: it lands mid-playback
+        api.play(); // measuringSetup's speed change queued this speed's probe: it lands mid-playback
         await sleep(8000);
         restore();
         const probe = lab()
