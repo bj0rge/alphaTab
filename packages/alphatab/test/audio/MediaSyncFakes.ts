@@ -403,6 +403,10 @@ export class MediaSynthHarness {
      */
     public readonly states: string[] = [];
     public readonly positions: number[] = [];
+    /**
+     * The sync points loadSong() gave the player: a test shifts them and sends them again.
+     */
+    public syncPoints: BackingTrackSyncPoint[] = [];
     public finished: number = 0;
 
     /**
@@ -471,6 +475,7 @@ export class MediaSynthHarness {
         if (this.handler) {
             this.handler.backingTrackDuration += leadInMs;
         }
+        this.syncPoints = generator.syncPoints;
         this.player.loadMidiFile(midi);
         this.player.loadBackingTrack(score);
         this.player.updateSyncPoints(generator.syncPoints);
