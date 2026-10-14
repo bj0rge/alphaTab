@@ -87,7 +87,8 @@ export function buildSettings(options: ControlAppOptions, viewport: HTMLElement)
             enableSynthesizerWithMedia: params.get('mixing') === '1',
             scrollOffsetX: -10,
             scrollOffsetY: -20,
-            soundFont: options.soundFont ?? Paths.soundFont,
+            // ?soundfont=<url> tries another SoundFont
+            soundFont: params.get('soundfont') ?? options.soundFont ?? Paths.soundFont,
             scrollElement: viewport
         }
     } satisfies alphaTab.json.SettingsJson);
