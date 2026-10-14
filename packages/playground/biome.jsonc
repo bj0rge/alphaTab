@@ -6,21 +6,24 @@
         "includes": [
             "*.ts",
             "src/**",
-            "test/**"
+            "test/**",
+            "demos/sync-lab/**"
         ]
     },
     "formatter": {
         "includes": [
             "*.ts",
             "src/**",
-            "test/**"
+            "test/**",
+            "demos/sync-lab/**"
         ]
     },
     "linter": {
         "includes": [
             "*.ts",
             "src/**",
-            "test/**"
+            "test/**",
+            "demos/sync-lab/**"
         ]
     }
 }
