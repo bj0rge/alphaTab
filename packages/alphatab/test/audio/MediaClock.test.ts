@@ -335,6 +335,21 @@ describe('ExternalMediaClockTests', () => {
         expect(clock.position).toBe(5500);
     });
 
+    it('a-paused-move-to-where-the-media-already-is-holds-back-no-update', () => {
+        // a move that doesn't move (a click on the beat the cursor is on, a Stop at the song's start while the media is
+        // reported there): the first update ends the wait, and the media's own start right after it shows
+        const { clock, time } = pausedAt5300();
+        clock.notePausedPosition(5300);
+        expect(clock.isSeeking).toBe(true);
+        time.heard = 1.1;
+        clock.addSample(5300);
+        expect(clock.isSeeking).toBe(false);
+        time.heard = 1.3;
+        clock.addSample(5450); // play pressed inside the media
+        expect(clock.position).toBe(5450);
+        expect(clock.movedSincePause()).toBe(true);
+    });
+
     it('a-jump-while-playing-keeps-the-jump-tolerance', () => {
         // the playing media moves toward where it was: within 500 ms of the target an update counts, also once the
         // media is paused before it showed the jump

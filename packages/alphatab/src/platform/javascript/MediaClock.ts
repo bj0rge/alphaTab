@@ -282,9 +282,10 @@ export class ExternalMediaClock implements IMediaClock {
      *
      * Until an update shows the move, the media shows where it stopped (at or after its last update) or the new
      * position, and the move can be shorter than {@link JumpToleranceMs} (the API's move back to the beat's start on
-     * Pause): while it stays paused, an update at least as close to where the clock showed the media before the move
-     * as to `position` is from before the move. A move the media has not shown yet keeps that old position for the
-     * next one. Without an old position (no update yet) the jump tolerance applies.
+     * Pause): while it stays paused, an update closer to where the clock showed the media before the move than to
+     * `position` is from before the move (a tie shows the move: a move to where the clock already shows the media ends
+     * at the first update). A move the media has not shown yet keeps that old position for the next one. Without an old
+     * position (no update yet) the jump tolerance applies.
      */
     public notePausedPosition(position: number): void {
         const now = this._source.heardContextTime();
@@ -335,8 +336,9 @@ export class ExternalMediaClock implements IMediaClock {
             return false;
         }
         if (!this._playing && !Number.isNaN(this._jumpFrom)) {
-            // the paused media shows where it was or the new position: the side of the move tells them apart
-            return Math.abs(positionMs - this._jumpFrom) <= Math.abs(positionMs - this._jumpTarget);
+            // the paused media shows where it was or the new position: the side of the move tells them apart (a tie
+            // shows the move)
+            return Math.abs(positionMs - this._jumpFrom) < Math.abs(positionMs - this._jumpTarget);
         }
         return Math.abs(positionMs - this._jumpTarget) > ExternalMediaClock.JumpToleranceMs;
     }
