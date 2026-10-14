@@ -252,6 +252,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
 
     private _handshake: number = 0;
     private _holdBefore: number = -1;
+    /** The target of a start that waits for the media's seek (media ms); -1 when no start waits. */
+    private _pendingStartTarget: number = -1;
     private _mediaDelayTimer: number = 0;
     private _countIn: CountInHandOff | null = null;
     private _mediaStartCheckTimer: number = 0;
@@ -622,14 +624,26 @@ export class MediaSynthPlayer implements IAlphaSynth {
             return;
         }
         this._media.playbackSpeed = value;
+        // the cursor hold is kept in the units of the speed it was set at, which a speed change rescales: drop it
+        this._holdBefore = -1;
         const speed = this._media.playbackSpeed;
         this._synth.playbackSpeed = speed;
         this._clock.speed = speed;
         this._queueProbe(speed, true);
         this._probeNext();
         if (this._state === PlayerState.Playing && this._isMixing && !this._countIn) {
-            // both at the new speed with its latency: re-sync and settle (§6.2; spike 11)
-            this.controller.speedChanged(speed);
+            if (this._pendingStartTarget >= 0) {
+                // the start waits for the media's seek and is planned at the old speed: start again from the same
+                // position, so the plan, the controller's speed and the start lead it learns are the new speed's. (That
+                // seek went to the old pre-roll start: the media goes back to the position Play was pressed at first.)
+                const target = this._pendingStartTarget;
+                this._interrupt();
+                this._media.seekMediaTo(target);
+                this._startPlayback(false);
+            } else {
+                // both at the new speed with its latency: re-sync and settle (§6.2; spike 11)
+                this.controller.speedChanged(speed);
+            }
         }
         if (this._countIn) {
             this._retimeCountIn(this._countIn, speed);
@@ -709,11 +723,13 @@ export class MediaSynthPlayer implements IAlphaSynth {
             this._media.seekMediaTo(plan.mediaSeekTo);
         }
         const handshake = this._handshake;
+        this._pendingStartTarget = plan.target;
         this._clock.whenSeeked(() => {
             if (handshake !== this._handshake) {
                 // a pause or another handshake came first
                 return;
             }
+            this._pendingStartTarget = -1;
             if (!this._isMixing) {
                 // the synthesizer failed while the media seeked: the media starts alone, without waiting for it
                 this._playMedia();
@@ -723,6 +739,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
             this._synth.play();
             if (plan.mediaDelayMs > 0) {
                 this._mediaDelayTimer = this._timer.setTimeout(() => {
+                    if (handshake !== this._handshake) {
+                        // a pause or another handshake came first (the timer of an earlier start that a later one
+                        // from the same handshake overwrote)
+                        return;
+                    }
                     this._mediaDelayTimer = 0;
                     this._playMedia();
                 }, plan.mediaDelayMs);
@@ -896,6 +917,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._mediaStartCheckTimer = 0;
         this._cancelCountIn();
         this._holdBefore = -1;
+        this._pendingStartTarget = -1;
         this.controller.stopped();
         this._pauseMedia();
         this._synth.pause();
