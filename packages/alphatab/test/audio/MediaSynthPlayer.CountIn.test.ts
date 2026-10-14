@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { Logger } from '@coderline/alphatab/Logger';
+import { PlayerState } from '@coderline/alphatab/synth/PlayerState';
 import { MediaSynthHarness } from 'test/audio/MediaSyncFakes';
 
 async function countingIn(speed: number = 1, at: number = 5000): Promise<MediaSynthHarness> {
@@ -253,5 +254,93 @@ describe('MediaSynthPlayerCountInTests', () => {
         expect(h.synth.calls[h.synth.calls.length - 1]).toBe('pause');
         expect(warning.mock.calls.some(c => String(c[1]).startsWith('The media did not start'))).toBe(true);
         warning.mockRestore();
+    });
+
+    it('a-media-start-that-never-happens-after-the-time-limit-pauses-it', async () => {
+        // R-2 on the time-limit path: the count-in end never comes, the media starts anyway, and then does not run
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = await countingIn();
+        h.synth.startCountIn(2000);
+        h.timer.advance(2250);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        h.mediaOutput!.isPlaying = false; // the browser refused the play()
+        h.timer.advance(600);
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(h.synth.calls[h.synth.calls.length - 1]).toBe('pause');
+        expect(warning.mock.calls.some(c => String(c[1]).startsWith('The media did not start'))).toBe(true);
+        warning.mockRestore();
+    });
+
+    it('a-media-that-runs-after-the-time-limit-keeps-playing', async () => {
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = await countingIn();
+        h.synth.startCountIn(2000);
+        h.timer.advance(2250);
+        for (let i = 0; i < 14; i++) {
+            h.timer.advance(50);
+            h.mediaOutput!.advance(50);
+        }
+        expect(h.states).toEqual(['Playing']);
+        expect(warning.mock.calls.some(c => String(c[1]).startsWith('The media did not start'))).toBe(false);
+        warning.mockRestore();
+    });
+
+    it('a-seek-from-the-playing-handler-keeps-the-media-paused-for-the-count-in', async () => {
+        // play() reports Playing before it starts: the app's seek in its handler starts playback first, without a
+        // count-in. The start Play makes supersedes it: the media that start played stops, and waits for the count-in
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.player.countInVolume = 1;
+        h.player.stateChanged.on(e => {
+            if (e.state === PlayerState.Playing) {
+                h.player.timePosition = 8000;
+            }
+        });
+        h.player.play();
+        expect(h.synth.calls.slice(-3)).toEqual(['pause', `seek:${h.mediaOutput!.currentTime}`, 'play:countIn=1']);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.player.controller.isActive).toBe(false);
+        h.synth.startCountIn(2000);
+        h.synthOutput.endCountIn(1.5 * 48000);
+        h.timer.advance(1500);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        expect(h.player.diagnostics.countIns.length).toBe(1);
+    });
+
+    it('a-speed-change-during-the-count-in-keeps-the-cursor-at-the-start', async () => {
+        // the cursor hold is in the units of the speed it was set at (a slower speed doubles them): it follows it
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.player.countInVolume = 1;
+        h.player.timePosition = 5000;
+        h.player.play();
+        h.synth.startCountIn(2000);
+        const start = h.player.timePosition * 2; // the start position in 0.5x units
+        h.positions.length = 0;
+        h.player.playbackSpeed = 0.5; // the media now waits 120 ms before the start
+        expect(h.positions.filter(p => p < start - 1)).toEqual([]);
+        h.synthOutput.endCountIn(1.5 * 48000);
+        h.timer.advance(1500);
+        for (let i = 0; i < 12; i++) {
+            h.timer.advance(50);
+            h.mediaOutput!.advance(50);
+        }
+        expect(h.positions.length).toBeGreaterThan(0); // the cursor follows the media after the hand-off
+        expect(Math.min(...h.positions)).toBeGreaterThanOrEqual(start - 1);
+    });
+
+    it('a-slower-speed-during-a-count-in-with-a-pre-roll-keeps-the-cursor-at-the-start', async () => {
+        // the media reports its position at the new speed as the speed changes: the hold is converted before that
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.player.playbackSpeed = 0.75;
+        h.player.countInVolume = 1;
+        h.player.timePosition = 6000;
+        const start = (h.player.timePosition * 0.75) / 0.5; // the start position in 0.5x units
+        h.player.play(); // the media waits 120 ms before the start
+        h.synth.startCountIn(2000);
+        h.positions.length = 0;
+        h.player.playbackSpeed = 0.5;
+        expect(h.positions.filter(p => p < start - 1)).toEqual([]);
     });
 });

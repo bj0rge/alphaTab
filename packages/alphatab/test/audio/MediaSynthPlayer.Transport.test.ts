@@ -419,4 +419,26 @@ describe('MediaSynthPlayerTransportTests', () => {
         expect(h.states).toEqual(['Playing', 'Paused']);
         expect(h.timer.pending).toBe(0);
     });
+
+    it('a-seek-from-the-playing-handler-at-0-5x-starts-once-at-the-seek-target', async () => {
+        // play() reports Playing before it starts: the app's seek in its handler starts playback first, and its
+        // pre-roll seek moves the <audio> 60 ms before the target. The start Play makes supersedes it and begins at the
+        // target, not at the position that pre-roll left (60 ms early, and 120 ms after its own pre-roll)
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.player.playbackSpeed = 0.5;
+        h.mediaOutput!.currentTime = 5000;
+        h.player.stateChanged.on(e => {
+            if (e.state === PlayerState.Playing) {
+                h.backingClock!.isSeeking = true; // the <audio> seeks asynchronously
+                h.player.timePosition = 8000; // media time 4000 at 0.5x
+            }
+        });
+        h.player.play();
+        h.backingClock!.finishSeek();
+        expect(h.synth.count('play:')).toBe(1); // the seek's own start never ran
+        expect(h.synth.lastSeek()).toBeCloseTo(4000 - 60, 3);
+        expect(h.mediaOutput!.seekTimes[h.mediaOutput!.seekTimes.length - 1]).toBeCloseTo(4000 - 60, 3);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+    });
 });
