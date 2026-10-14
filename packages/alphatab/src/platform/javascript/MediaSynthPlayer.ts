@@ -262,6 +262,15 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _countIn: CountInHandOff | null = null;
     private _mediaStartCheckTimer: number = 0;
     private _wrapTimer: number = 0;
+    /**
+     * External media: the synthesizer is silent until the media's clock has a fit again (after a seek, a wrap, a stall
+     * or a start inside the media's own player), and then starts at the media's position.
+     */
+    private _awaitingSynthStart: boolean = false;
+    /** External media: the synthesizer was silenced for a stall (F-17); the next update that moves ends it. */
+    private _stalled: boolean = false;
+    /** External media: fit the clock anew from the next update that moves (after a start, a stall or a jump). */
+    private _refitOnMove: boolean = false;
 
     private _probeQueue: number[] = [];
     private _probing: boolean = false;
@@ -314,6 +323,13 @@ export class MediaSynthPlayer implements IAlphaSynth {
         subscribe(media.midiLoadFailed.on(e => (this.midiLoadFailed as EventEmitterOfT<Error>).trigger(e)));
         subscribe(media.ready.on(() => this._checkReady()));
         subscribe(media.readyForPlayback.on(() => this._checkReadyForPlayback()));
+        subscribe((media.output as IBackingTrackSynthOutput).timeUpdate.on(t => this._onMediaTimeUpdate(t)));
+        const externalClock = this._externalClock;
+        if (externalClock) {
+            // after a seek the media reports its old position for a moment (spike 9): those updates stop here, before
+            // the media player's cursor and end check
+            this._output.skipPosition = position => externalClock.isFromBeforeJump(position);
+        }
         subscribe(synth.ready.on(() => this._checkReady()));
         subscribe(synth.readyForPlayback.on(() => this._onSynthReadyForPlayback()));
         subscribe(
@@ -655,6 +671,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
                 // plan, the controller's speed and the start lead it learns are the new speed's
                 this._startPlayback(false);
             } else {
+                // the fitted line is at the old rate
+                this._externalClock?.restartFit();
                 // both at the new speed with its latency: re-sync and settle (§6.2; spike 11)
                 this.controller.speedChanged(speed);
             }
@@ -726,8 +744,20 @@ export class MediaSynthPlayer implements IAlphaSynth {
             this._scheduleWrap(0);
             return;
         }
+        const external = this._externalClock;
+        if (external && external.movedSincePause()) {
+            // F-6: play was pressed inside the media's own player and it already moves:
+            // no count-in, no learning; the synth starts where the media is
+            this._playMedia();
+            this._awaitingSynthStart = true;
+            this._startSynthWhenTheMediaRuns();
+            return;
+        }
         this._sendFollowConfig();
-        const target = this._clock.position;
+        // external media: alphaTab may have moved the paused media since its last update (a Stop, the song's end), so
+        // start from alphaTab's own position; inside a lead-in (before bar 1) only the media's updates know where it is
+        const target =
+            external && this._media.timePosition >= 0 ? this._media.mediaTimeOfPosition : this._clock.position;
         if (countIn && this._countInVolume > 0) {
             this._startCountIn(target, speed);
             return;
@@ -933,6 +963,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
             ) {
                 return;
             }
+            if (this._externalClock) {
+                // the video buffers: the synth restarts at the media's position once it moves (§6.2)
+                this._silenceUntilTheMediaMoves();
+                return;
+            }
             // R-2: the browser refused the media's play(); decision D-7 picks the real fallback
             Logger.warning('Player', 'The media did not start; pausing (the browser may have refused its play())');
             this.pause();
@@ -942,6 +977,15 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _seek(apply: () => void): void {
         if (this._state !== PlayerState.Playing) {
             apply();
+            this._externalClock?.notePausedPosition(this._media.mediaTimeOfPosition);
+            return;
+        }
+        if (this._externalClock && !this._countIn) {
+            // external media can't be held: it jumps while playing, the synth waits for it (§6.2)
+            this._timer.clearTimeout(this._wrapTimer);
+            this._wrapTimer = 0;
+            apply();
+            this._jumpExternal(this._media.mediaTimeOfPosition);
             return;
         }
         // pause both, seek, restart through the start handshake: no count-in, no stateChanged (§6.2)
@@ -962,7 +1006,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
 
     /**
      * Drops what a start has in flight: its wait for the media's seek, its media delay and start check, its count-in
-     * and the cursor hold, and the loop wrap's timer (every start schedules its own).
+     * and the cursor hold, the loop wrap's timer (every start schedules its own) and, for external media, the
+     * synthesizer's wait for the media.
      */
     private _dropStartInFlight(): void {
         this._handshake++;
@@ -975,6 +1020,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._cancelCountIn();
         this._holdBefore = -1;
         this._startTarget = -1;
+        this._awaitingSynthStart = false;
+        this._stalled = false;
+        this._refitOnMove = false;
     }
 
     /**
@@ -990,6 +1038,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
 
     private _playMedia(): void {
         this._externalClock?.setPlaying(true);
+        // external media: the paused position and the updates while the media starts would bend the first fit: fit
+        // from where it moves, as after a stall
+        this._refitOnMove = true;
         this._media.play();
     }
 
@@ -1115,10 +1166,21 @@ export class MediaSynthPlayer implements IAlphaSynth {
             return;
         }
         this.diagnostics.wraps.push(this._timer.now());
+        const range = this._playbackRange;
+        if (this._externalClock) {
+            // F-5: external media wraps without pausing: seek it; the synth waits until its clock has a fit again
+            // without a range the song's start: bar 1's media time, as the backing-track wrap and today's player go
+            const start = this._media.tickToMediaTime(range ? range.startTick : 0);
+            this._media.seekMediaTo(start);
+            if (this._state === PlayerState.Playing) {
+                // (what the app's handlers did to the player wins, as below)
+                this._jumpExternal(start);
+            }
+            return;
+        }
         // pause both, seek both to the range start, restart through the start handshake (§6.2):
         // no count-in, no stateChanged
         this._interrupt();
-        const range = this._playbackRange;
         if (range) {
             this._media.tickPosition = range.startTick;
         } else {
@@ -1127,6 +1189,86 @@ export class MediaSynthPlayer implements IAlphaSynth {
         if (this._state === PlayerState.Playing) {
             this._startPlayback(false);
         }
+    }
+
+    // ---- external media (§6.2): the media can't be held, so the synthesizer waits for it ----
+
+    private _onMediaTimeUpdate(position: number): void {
+        const clock = this._externalClock;
+        if (!clock) {
+            return;
+        }
+        if (
+            (this._awaitingSynthStart || Number.isNaN(clock.mediaTimeNow())) &&
+            !clock.isSeeking &&
+            position === clock.position
+        ) {
+            // the media holds (after a jump, or at a start before its clock has a time): fit from where it moves
+            this._refitOnMove = true;
+        }
+        if (this._refitOnMove && position !== clock.position) {
+            // the media moves (again): fit from here; a fit across a stall re-syncs twice (spike 9 §4)
+            this._refitOnMove = false;
+            this._stalled = false;
+            clock.restartFit();
+        }
+        clock.addSample(position);
+        if (this._mediaStartCheckTimer !== 0 && !Number.isNaN(clock.mediaTimeNow())) {
+            // the media runs: its start needs no more checking
+            this._timer.clearTimeout(this._mediaStartCheckTimer);
+            this._mediaStartCheckTimer = 0;
+        }
+        if (this._state !== PlayerState.Playing || this._countIn) {
+            return;
+        }
+        if (!this._isMixing) {
+            if (this._awaitingSynthStart && !clock.isSeeking) {
+                // media only: no synthesizer to restart after a jump; plan the next wrap from the media's new position
+                this._awaitingSynthStart = false;
+                this._scheduleWrap(0);
+            }
+            return;
+        }
+        if (!this._stalled && !this._awaitingSynthStart && clock.isStalled) {
+            // F-17: the media stalls (buffering): silence the synth until it moves again
+            this._stalled = true;
+            this._silenceUntilTheMediaMoves();
+            return;
+        }
+        this._startSynthWhenTheMediaRuns();
+    }
+
+    private _startSynthWhenTheMediaRuns(): void {
+        if (!this._awaitingSynthStart || this._stalled || Number.isNaN(this._clock.mediaTimeNow())) {
+            return;
+        }
+        this._awaitingSynthStart = false;
+        // started by the media, or after an external seek, wrap or stall: no count-in, no learning; the synth starts
+        // where the media is and the settling re-sync locks it (§6.2)
+        this._sendFollowConfig();
+        this.controller.startedAfterHandOff(this.playbackSpeed, false);
+        this._synth.pause();
+        this.controller.resync();
+        this._synth.play();
+        this._scheduleWrap(0);
+    }
+
+    private _jumpExternal(target: number): void {
+        // an app's handler may have re-armed the wrap during the jump (its finished or positionChanged) from the
+        // position before it; the synth's restart arms it again from the media's new position
+        this._timer.clearTimeout(this._wrapTimer);
+        this._wrapTimer = 0;
+        this.controller.stopped();
+        this._synth.pause();
+        this._externalClock!.expectJumpTo(target);
+        this._awaitingSynthStart = true;
+    }
+
+    private _silenceUntilTheMediaMoves(): void {
+        this.controller.stopped();
+        this._synth.pause();
+        this._awaitingSynthStart = true;
+        this._refitOnMove = true;
     }
 
     // ---- delegation ----
