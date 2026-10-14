@@ -12,6 +12,7 @@ import { Cursors } from '@coderline/alphatab/platform/Cursors';
 import type { IContainer } from '@coderline/alphatab/platform/IContainer';
 import type { IMouseEventArgs } from '@coderline/alphatab/platform/IMouseEventArgs';
 import type { IUiFacade } from '@coderline/alphatab/platform/IUiFacade';
+import type { PlayerMode } from '@coderline/alphatab/PlayerSettings';
 import type { IScoreRenderer } from '@coderline/alphatab/rendering/IScoreRenderer';
 import type { RenderFinishedEventArgs } from '@coderline/alphatab/rendering/RenderFinishedEventArgs';
 import { Bounds } from '@coderline/alphatab/rendering/utils/Bounds';
@@ -337,6 +338,10 @@ export class TestUiFacade implements IUiFacade<unknown> {
     }
 
     public createBackingTrackPlayer(): IAlphaSynth | null {
+        return null;
+    }
+
+    public createMediaSynthPlayer(_mode: PlayerMode): IAlphaSynth | null {
         return null;
     }
 

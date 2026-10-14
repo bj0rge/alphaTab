@@ -485,4 +485,40 @@ export class PlayerSettings {
      * This buffer size can be changed whenever needed.
      */
     public bufferTimeInMilliseconds: number = 500;
+
+    /**
+     * Whether the synthesizer plays along a backing track or external media.
+     * @since 1.9.0
+     * @defaultValue `false`
+     * @category Player
+     * @remarks
+     * With {@link playerMode} resolving to {@link PlayerMode.EnabledBackingTrack} or
+     * {@link PlayerMode.EnabledExternalMedia}, alphaTab also runs its synthesizer, locked to the media: the
+     * metronome, the count-in and the score's tracks (use the track mute, solo and volume to choose what plays).
+     * The media stays the time source. Balance the two with `api.backingTrackVolume` and `api.synthVolume`.
+     *
+     * Needs {@link outputMode} {@link PlayerOutputMode.WebAudioAudioWorklets} and a browser with AudioWorklets (a
+     * secure context); otherwise the media plays alone and a warning is logged. Web only: other platforms play the
+     * media alone.
+     *
+     * External media is best-effort: tune {@link mediaSyncOffsetInMilliseconds} by ear. Hide the external player's
+     * own controls (YouTube: `controls: 0`, `disablekb: 1`) so starts go through your Play button and keep their
+     * count-in. If your integration starts alphaTab from the media's own play event, call `updatePosition()` right
+     * before `api.play()`: alphaTab then starts the synthesizer where the media already is, without a count-in.
+     * When the media pauses, call `updatePosition()` once more (YouTube: at its `PAUSED` state, before you stop your
+     * timer), so the next start through alphaTab begins where the media stopped, not where it was one update earlier.
+     */
+    public enableSynthesizerWithMedia: boolean = false;
+
+    /**
+     * A manual correction of the synthesizer against the media, in milliseconds.
+     * @since 1.9.0
+     * @defaultValue `0`
+     * @category Player
+     * @remarks
+     * Positive values make the synthesizer play later, negative values earlier, in milliseconds of real time at any
+     * playback speed. Use it for output paths alphaTab can't measure, like Bluetooth headphones or an external
+     * media player. Only used with {@link enableSynthesizerWithMedia}.
+     */
+    public mediaSyncOffsetInMilliseconds: number = 0;
 }

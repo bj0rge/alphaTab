@@ -168,6 +168,7 @@ export class AlphaTabApiBase<TSettings> {
     private _score: Score | null = null;
     private _tracks: Track[] = [];
     private _actualPlayerMode: PlayerMode = PlayerMode.Disabled;
+    private _actualMixing: boolean = false;
     private _player!: AlphaSynthWrapper;
     private _renderer: ScoreRendererWrapper;
 
@@ -1760,7 +1761,11 @@ export class AlphaTabApiBase<TSettings> {
         }
 
         let newPlayer: IAlphaSynth | null = null;
-        if (mode !== this._actualPlayerMode) {
+        // the synthesizer along a backing track or external media (§7); recreated when the switch changes
+        const mixing =
+            this.settings.player.enableSynthesizerWithMedia &&
+            (mode === PlayerMode.EnabledBackingTrack || mode === PlayerMode.EnabledExternalMedia);
+        if (mode !== this._actualPlayerMode || mixing !== this._actualMixing) {
             this._destroyPlayer();
             this._updateCursors();
 
@@ -1772,10 +1777,14 @@ export class AlphaTabApiBase<TSettings> {
                     newPlayer = this.uiFacade.createWorkerPlayer();
                     break;
                 case PlayerMode.EnabledBackingTrack:
-                    newPlayer = this.uiFacade.createBackingTrackPlayer();
+                    newPlayer =
+                        (mixing ? this.uiFacade.createMediaSynthPlayer(mode) : null) ??
+                        this.uiFacade.createBackingTrackPlayer();
                     break;
                 case PlayerMode.EnabledExternalMedia:
-                    newPlayer = new ExternalMediaPlayer(this.settings.player.bufferTimeInMilliseconds);
+                    newPlayer =
+                        (mixing ? this.uiFacade.createMediaSynthPlayer(mode) : null) ??
+                        new ExternalMediaPlayer(this.settings.player.bufferTimeInMilliseconds);
                     break;
             }
         } else {
@@ -1785,6 +1794,7 @@ export class AlphaTabApiBase<TSettings> {
         }
 
         this._actualPlayerMode = mode;
+        this._actualMixing = mixing;
         if (!newPlayer) {
             return false;
         }

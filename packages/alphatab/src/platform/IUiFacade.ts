@@ -9,6 +9,7 @@ import type { IScoreRenderer } from '@coderline/alphatab/rendering/IScoreRendere
 import type { RenderFinishedEventArgs } from '@coderline/alphatab/rendering/RenderFinishedEventArgs';
 import type { Bounds } from '@coderline/alphatab/rendering/utils/Bounds';
 import type { IAudioExporterWorker } from '@coderline/alphatab/synth/IAudioExporter';
+import type { PlayerMode } from '@coderline/alphatab/PlayerSettings';
 
 /**
  * This interface represents the UI abstraction between alphaTab and the corresponding UI framework being used.
@@ -109,6 +110,14 @@ export interface IUiFacade<TSettings> {
      * @returns
      */
     createBackingTrackPlayer(): IAlphaSynth | null;
+
+    /**
+     * Tells the UI layer to create a player that runs the synthesizer along a backing track or external media
+     * ({@link PlayerSettings.enableSynthesizerWithMedia}).
+     * @param mode {@link PlayerMode.EnabledBackingTrack} or {@link PlayerMode.EnabledExternalMedia}.
+     * @returns The player, or null when this platform can't mix (the media then plays alone).
+     */
+    createMediaSynthPlayer(mode: PlayerMode): IAlphaSynth | null;
 
     /**
      * Creates the cursor objects that are used to highlight the currently played beats and bars.
