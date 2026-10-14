@@ -620,6 +620,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
             // back to the range start, as today
             this._media.tickPosition = this._playbackRange.startTick;
         }
+        this._noteMovedPausedMedia();
         this._setState(PlayerState.Paused, true);
     }
 
@@ -959,7 +960,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
             if (
                 this._state !== PlayerState.Playing ||
                 !Number.isNaN(this._clock.mediaTimeNow()) ||
-                this._clock.isSeeking
+                // (a jump external media has not shown yet is no reason to wait: the synth is silent until it moves)
+                (this._clock.isSeeking && !this._externalClock)
             ) {
                 return;
             }
@@ -977,13 +979,16 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _seek(apply: () => void): void {
         if (this._state !== PlayerState.Playing) {
             apply();
-            this._externalClock?.notePausedPosition(this._media.mediaTimeOfPosition);
+            this._noteMovedPausedMedia();
             return;
         }
         if (this._externalClock && !this._countIn) {
             // external media can't be held: it jumps while playing, the synth waits for it (§6.2)
             this._timer.clearTimeout(this._wrapTimer);
             this._wrapTimer = 0;
+            // the jump ends a start's pre-roll: the cursor follows from the new position, not held at the old start
+            this._holdBefore = -1;
+            this._startTarget = -1;
             apply();
             this._jumpExternal(this._media.mediaTimeOfPosition);
             return;
@@ -1116,7 +1121,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _scheduleWrap(extraDelayMs: number): void {
         this._timer.clearTimeout(this._wrapTimer);
         this._wrapTimer = 0;
-        if (this._state !== PlayerState.Playing || this._countIn) {
+        if (this._state !== PlayerState.Playing || this._countIn || this._awaitingSynthStart) {
+            // (external media that has not shown its jump yet: the position the clock has is from before it, and the
+            // synth's restart plans the wrap from the media's new position)
             return;
         }
         const end = this._wrapEnd();
@@ -1181,6 +1188,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
             if (this._state === PlayerState.Playing) {
                 this.diagnostics.wraps.push(this._timer.now());
                 this._jumpExternal(start);
+            } else {
+                this._noteMovedPausedMedia();
             }
             return;
         }
@@ -1217,6 +1226,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
             // the media moves (again): fit from here; a fit across a stall re-syncs twice (spike 9 §4)
             this._refitOnMove = false;
             this._stalled = false;
+            clock.restartFit();
+        }
+        if (!this._graph.isRunning) {
+            // the heard time stands still until the context renders: these updates would share one stamp and bend the
+            // fit once it runs, so only the latest one is kept
             clock.restartFit();
         }
         clock.addSample(position);
@@ -1258,6 +1272,21 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this.controller.resync();
         this._synth.play();
         this._scheduleWrap(0);
+    }
+
+    /**
+     * alphaTab moved the paused media (a Stop, a seek, a wrap that the app's handler paused). That position is where
+     * the next start begins, not a start of the media's own, and the updates that still show the old position (the
+     * media applies the seek a moment late) stay out of the media player and the clock: otherwise they would move
+     * alphaTab back, or, inside the clock's pause-settle window, read as the media's own start at the next Play.
+     */
+    private _noteMovedPausedMedia(): void {
+        const clock = this._externalClock;
+        if (clock) {
+            const position = this._media.mediaTimeOfPosition;
+            clock.notePausedPosition(position);
+            clock.expectJumpTo(position);
+        }
     }
 
     private _jumpExternal(target: number): void {

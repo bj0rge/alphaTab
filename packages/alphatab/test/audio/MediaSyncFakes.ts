@@ -107,6 +107,10 @@ export class FakeMixGraph implements IMediaMixGraph {
     public sampleRate: number = 48000;
     public baseLatencyMs: number = 0;
     public running: boolean = true;
+    /**
+     * The fake time (ms) at which the context started to run: the external clock's heard time counts from there.
+     */
+    public runningSince: number = 0;
     public readonly context: AudioContext | null = null;
     public readonly mediaSourceNode: AudioNode | null = null;
     public readonly masterGainNode: GainNode | null = null;
@@ -135,6 +139,7 @@ export class FakeMixGraph implements IMediaMixGraph {
 
     public start(): void {
         this.running = true;
+        this.runningSince = this._timer.time;
         for (const action of this._whenRunning.splice(0)) {
             action();
         }
@@ -355,18 +360,24 @@ export class FakeProbe implements IMediaLatencyProbe {
 }
 
 /**
- * The heard context time of the external clock, from the fake timer.
+ * The heard context time of the external clock, from the fake timer. With a graph, a context that does not run stands
+ * still at 0 and counts from the time it starts (a real context renders nothing before the page's first gesture).
  */
 export class TimerHeardTime implements IExternalClockSource {
     public readonly sampleRate: number = 48000;
     private readonly _timer: FakeMediaTimer;
+    private readonly _graph: FakeMixGraph | null;
 
-    public constructor(timer: FakeMediaTimer) {
+    public constructor(timer: FakeMediaTimer, graph: FakeMixGraph | null = null) {
         this._timer = timer;
+        this._graph = graph;
     }
 
     public heardContextTime(): number {
-        return this._timer.time / 1000;
+        if (this._graph && !this._graph.running) {
+            return 0;
+        }
+        return (this._timer.time - (this._graph?.runningSince ?? 0)) / 1000;
     }
 }
 
@@ -408,7 +419,7 @@ export class MediaSynthHarness {
             const media = new ExternalMediaPlayer(500);
             const handler = new TestMediaHandler();
             (media.output as IExternalMediaSynthOutput).handler = handler;
-            const clock = new ExternalMediaClock(new TimerHeardTime(this.timer), () => 0);
+            const clock = new ExternalMediaClock(new TimerHeardTime(this.timer, this.graph), () => 0);
             this.media = media;
             this.handler = handler;
             this.externalClock = clock;
