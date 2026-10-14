@@ -52,15 +52,23 @@ describe('MediaSynthPlayerTransportTests', () => {
 
     it('a-start-away-from-1x-pre-rolls-into-a-lead-in', async () => {
         // bar 1 starts 2 s into the recording: Play from the song's start seeks the media 60 ms before bar 1, not
-        // to the media's own start
+        // to the media's own start, and the cursor stays at the song's start meanwhile (no position before it)
         const h = new MediaSynthHarness();
         await h.loadSong(true, 2000);
         h.probeLatencies.set(0.5, 60);
         h.player.playbackSpeed = 0.5;
+        h.player.timePosition = 0; // the cursor is exactly at the song's start, as after Stop
         h.mediaOutput!.currentTime = 2000;
+        h.positions.length = 0;
         h.player.play();
         expect(h.mediaOutput!.seekTimes[h.mediaOutput!.seekTimes.length - 1]).toBeCloseTo(1940, 3);
         expect(h.synth.lastSeek()).toBeCloseTo(1940 + 30, 3);
+        for (let i = 0; i < 10; i++) {
+            h.timer.advance(50);
+            h.mediaOutput!.advance(50);
+        }
+        expect(h.positions.length).toBeGreaterThan(0);
+        expect(Math.min(...h.positions)).toBeGreaterThanOrEqual(0);
     });
 
     it('the-media-pre-roll-does-not-move-the-cursor-back', async () => {
@@ -261,15 +269,33 @@ describe('MediaSynthPlayerTransportTests', () => {
         expect(h.positions[h.positions.length - 1]).toBe(0);
     });
 
-    it('a-one-time-midi-in-the-media-only-fallback-is-the-media-players-own', async () => {
+    it('a-one-time-midi-in-the-media-only-fallback-pauses-and-is-dropped', async () => {
+        // no synthesizer can play it, and the media player would pause itself, seek its <audio> to the song's start and
+        // play it there with its silent synthesizer, none of it visible to the app
         const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
         const h = new MediaSynthHarness();
         const midi = await h.loadSong(false);
         h.synth.fail('alphaTab.worker.mjs: 404');
         warning.mockRestore();
+        h.mediaOutput!.currentTime = 5000;
+        h.player.play();
+        h.mediaOutput!.advance(50);
+        const position = h.player.timePosition;
+        const seeks = h.mediaOutput!.seekTimes.length;
         const calls = h.synth.calls.length;
         h.player.playOneTimeMidiFile(midi);
-        expect(h.synth.calls.slice(calls)).toEqual([]);
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.mediaOutput!.seekTimes.length).toBe(seeks); // the <audio> stays where it is
+        expect(h.player.timePosition).toBe(position);
+        expect(h.synth.calls.slice(calls).filter(c => c !== 'pause')).toEqual([]); // only the pause reaches the synth
+        h.player.playOneTimeMidiFile(midi); // while Paused it changes nothing
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(h.mediaOutput!.seekTimes.length).toBe(seeks);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        h.player.play(); // the next Play runs the media alone again
+        expect(h.states).toEqual(['Playing', 'Paused', 'Playing']);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
     });
 
     it('a-soundfont-reload-while-playing-pauses-both', async () => {
@@ -312,5 +338,25 @@ describe('MediaSynthPlayerTransportTests', () => {
         expect(h.synth.seeks.length).toBe(seeks);
         expect(h.player.controller.isActive).toBe(false);
         expect(h.states).toEqual(['Playing']);
+    });
+
+    it('the-cursor-follows-the-media-once-the-pre-roll-is-over', async () => {
+        // the hold ends with the first position the media plays: a later position below the start (a faster speed
+        // halves the time units) is reported, not held back
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.probeLatencies.set(0.5, 60);
+        h.player.playbackSpeed = 0.5;
+        h.player.timePosition = 10000;
+        const start = h.player.timePosition;
+        h.player.play();
+        for (let i = 0; i < 10; i++) {
+            h.timer.advance(50);
+            h.mediaOutput!.advance(50);
+        }
+        h.positions.length = 0;
+        h.player.playbackSpeed = 1;
+        expect(h.positions.length).toBeGreaterThan(0);
+        expect(h.positions[h.positions.length - 1]).toBeLessThan(start);
     });
 });
