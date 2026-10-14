@@ -593,7 +593,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
             return false;
         }
         this._setState(PlayerState.Playing, false);
-        if (this._state !== PlayerState.Playing || this._destroyed) {
+        // (read again: the app's handler may have changed it since the check above)
+        if ((this._state as PlayerState) !== PlayerState.Playing || this._destroyed) {
             // the app's Playing handler paused, stopped or destroyed the player: that wins, nothing starts
             return true;
         }
