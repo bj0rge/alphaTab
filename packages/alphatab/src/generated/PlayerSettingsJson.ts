@@ -323,6 +323,9 @@ export interface PlayerSettingsJson {
      * before `api.play()`: alphaTab then starts the synthesizer where the media already is, without a count-in.
      * When the media pauses, call `updatePosition()` once more (YouTube: at its `PAUSED` state, before you stop your
      * timer), so the next start through alphaTab begins where the media stopped, not where it was one update earlier.
+     *
+     * With external media, changing this setting through `api.updateSettings()` creates a new player, as a
+     * {@link playerMode} change does: attach your `IExternalMediaHandler` to the new `api.player.output` again.
      */
     enableSynthesizerWithMedia?: boolean;
     /**

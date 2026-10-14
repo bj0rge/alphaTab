@@ -1329,7 +1329,8 @@ export class AlphaTabApiBase<TSettings> {
      * With {@link PlayerSettings.enableSynthesizerWithMedia} the synthesizer plays along a backing track. At the
      * default levels the metronome sits about 8 dB under a mastered recording: lower this to bring the metronome or
      * the synthesized tracks forward (0.35 is about −9 dB). {@link masterVolume} still scales both. Without mixing
-     * it scales the backing track alone. Not applied to external media: set your own player's volume there.
+     * it scales the backing track alone, and the backing track's level (this times {@link masterVolume}) stops at 1:
+     * a level above 1 needs mixing. Not applied to external media: set your own player's volume there.
      * @category Properties - Player
      * @since 1.9.0
      * @defaultValue `1`
