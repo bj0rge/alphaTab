@@ -1099,10 +1099,16 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     /**
-     * The range end (the song's end when looping without a range): finished, then the wrap or the stop (§6.2).
+     * The range end (the song's end when looping without a range): finished, then the wrap or the stop (§6.2). What
+     * the app's finished handler did to the player wins: a destroyed player gets nothing more, and a paused or
+     * stopped one is moved back to the range start but not restarted.
      */
     private _wrap(): void {
         (this.finished as EventEmitter).trigger();
+        if (this._destroyed) {
+            // the handler destroyed the player: nothing restarts, and no state change fires into it
+            return;
+        }
         if (!this._isLooping) {
             // back to the range start, stateChanged(Paused, stopped), as today
             this.stop();
@@ -1118,7 +1124,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
         } else {
             this._media.timePosition = 0;
         }
-        this._startPlayback(false);
+        if (this._state === PlayerState.Playing) {
+            this._startPlayback(false);
+        }
     }
 
     // ---- delegation ----
