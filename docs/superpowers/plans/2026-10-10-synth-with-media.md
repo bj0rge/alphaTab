@@ -11830,7 +11830,7 @@ first runs its measurement, then puts the choice as a picker (see "How to run th
 - [ ] **Step 1: S1–S3, steady playback**
 
 Run `await syncLab.runMeasurement()`. Pass, on each segment's `settled.p95AbsMs`: S1 ≤ 3 ms ('start@0s 1.0x' and
-'seek 1.0x'), S2 ≤ 5 ms ('seek + 1.5x'; also run `syncLab.loopTest(1.25, 4, 3)` for a 1.25× figure), S3 ≤ 20 ms
+'seek 1.0x'), S2 ≤ 5 ms ('seek + 1.25x' and 'seek + 1.5x'), S3 ≤ 20 ms
 ('seek + 0.5x' and 'seek + 0.75x').
 
 Then reload the lab with `?rate=44100` and run `await syncLab.runMeasurement()` again. The default beep track is a
@@ -11911,7 +11911,8 @@ count-in on, 0.5×, Play from the first beat after a fill or a crash. By Task 10
 about 180 ms of the bar before the downbeat under the count-in's last beat (about 60 ms with Option 2). Note what you
 hear next to both options.
 
-Put D-3 to the person as `[Q-D3]` with the two pre-roll results and that note in hand:
+Put D-3 to the person as `[Q-D3]` with the pre-roll results (`arms`: 60, 120, 120 and 60 ms, in run order, each
+from an unlearned media-start latency) and that note in hand:
 
 - **Scenario:** in the rhythm game at 0.5×, you press Play with the count-in on; the backing track enters on the
   downbeat after one bar of clicks.
