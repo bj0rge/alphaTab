@@ -261,6 +261,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _mediaDelayTimer: number = 0;
     private _countIn: CountInHandOff | null = null;
     private _mediaStartCheckTimer: number = 0;
+    private _wrapTimer: number = 0;
 
     private _probeQueue: number[] = [];
     private _probing: boolean = false;
@@ -660,6 +661,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
         if (this._countIn) {
             this._retimeCountIn(this._countIn, speed);
         }
+        if (this._state === PlayerState.Playing) {
+            this._scheduleWrap(0);
+        }
     }
 
     public get playbackRange(): PlaybackRange | null {
@@ -675,6 +679,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
         (this.playbackRangeChanged as EventEmitterOfT<PlaybackRangeChangedEventArgs>).trigger(
             new PlaybackRangeChangedEventArgs(value)
         );
+        this._scheduleWrap(0);
     }
 
     public get isLooping(): boolean {
@@ -683,6 +688,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
 
     public set isLooping(value: boolean) {
         this._isLooping = value;
+        this._scheduleWrap(0);
     }
 
     public playOneTimeMidiFile(midi: MidiFile): void {
@@ -716,6 +722,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._probeNext();
         if (!this._isMixing) {
             this._playMedia();
+            this._scheduleWrap(0);
             return;
         }
         this._sendFollowConfig();
@@ -778,6 +785,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
                 this._playMedia();
             }
             this.controller.started(plan, learnStartLead);
+            this._scheduleWrap(plan.mediaDelayMs);
             // R-2: away from 1x (after the pre-roll seek) or after the media delay, the media's play() runs after the
             // Play call returned; check that the media runs, as after a count-in
             this._watchMediaStart(
@@ -855,6 +863,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._watchMediaStart(
             this.controller.mediaStartLatencies.get(countIn.speed) + MediaSyncConstants.MediaStartCheckMs
         );
+        this._scheduleWrap(0);
     }
 
     private _onCountInTimeLimit(countIn: CountInHandOff): void {
@@ -870,6 +879,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._watchMediaStart(
             this.controller.mediaStartLatencies.get(countIn.speed) + MediaSyncConstants.MediaStartCheckMs
         );
+        this._scheduleWrap(0);
     }
 
     /**
@@ -950,7 +960,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
 
     /**
      * Drops what a start has in flight: its wait for the media's seek, its media delay and start check, its count-in
-     * and the cursor hold.
+     * and the cursor hold, and the loop wrap's timer (every start schedules its own).
      */
     private _dropStartInFlight(): void {
         this._handshake++;
@@ -958,6 +968,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._mediaDelayTimer = 0;
         this._timer.clearTimeout(this._mediaStartCheckTimer);
         this._mediaStartCheckTimer = 0;
+        this._timer.clearTimeout(this._wrapTimer);
+        this._wrapTimer = 0;
         this._cancelCountIn();
         this._holdBefore = -1;
         this._startTarget = -1;
@@ -1006,6 +1018,17 @@ export class MediaSynthPlayer implements IAlphaSynth {
             }
         }
         (this.positionChanged as EventEmitterOfT<PositionChangedEventArgs>).trigger(e);
+        if (this._wrapTimer !== 0 && !e.isSeek) {
+            const range = this._playbackRange;
+            const endTick = range ? range.endTick : this._media.loadedMidiInfo!.endTick;
+            if (e.currentTick >= endTick) {
+                // the media passed the wrap point before the timer fired (a busy main thread): wrap now, before the
+                // media player's own end check stops both at the song's end
+                this._timer.clearTimeout(this._wrapTimer);
+                this._wrapTimer = 0;
+                this._wrap();
+            }
+        }
     }
 
     private _onMediaFinished(): void {
@@ -1016,6 +1039,84 @@ export class MediaSynthPlayer implements IAlphaSynth {
             this._synth.stop();
             this._setState(PlayerState.Paused, true);
         }
+    }
+
+    /**
+     * The media time of the end to wrap or stop at, or -1 when the media's own end handles it (no range, no loop).
+     */
+    private _wrapEnd(): number {
+        const range = this._playbackRange;
+        if (range) {
+            return this._media.tickToMediaTime(range.endTick);
+        }
+        const info = this._media.loadedMidiInfo;
+        if (this._isLooping && info) {
+            return this._media.tickToMediaTime(info.endTick);
+        }
+        return -1;
+    }
+
+    private _scheduleWrap(extraDelayMs: number): void {
+        this._timer.clearTimeout(this._wrapTimer);
+        this._wrapTimer = 0;
+        if (this._state !== PlayerState.Playing || this._countIn) {
+            return;
+        }
+        const end = this._wrapEnd();
+        if (end < 0) {
+            return;
+        }
+        // G-3 (spike 4): a little before the end
+        const untilEndMs = (end - MediaSyncConstants.LoopWrapLeadMs - this._heardMediaPosition()) / this.playbackSpeed;
+        this._wrapTimer = this._timer.setTimeout(() => this._onWrapTimer(), Math.max(0, untilEndMs) + extraDelayMs);
+    }
+
+    private _onWrapTimer(): void {
+        this._wrapTimer = 0;
+        const end = this._wrapEnd();
+        if (this._state !== PlayerState.Playing || end < 0) {
+            return;
+        }
+        const remainingMs = (end - MediaSyncConstants.LoopWrapLeadMs - this._heardMediaPosition()) / this.playbackSpeed;
+        if (remainingMs > 5) {
+            // the timer fired early or the media started late: wait for the media
+            this._wrapTimer = this._timer.setTimeout(() => this._onWrapTimer(), remainingMs);
+            return;
+        }
+        this._wrap();
+    }
+
+    /**
+     * Where the wrap timer measures from (media ms): the media's reported position, plus its latency at this speed
+     * when the media is heard ahead of that position (below 1×, spec §6.3; as the start plan applies it), so the
+     * wrap comes before the heard range end. Above 1× (a negative latency) it stays where spike 4 measured it.
+     */
+    private _heardMediaPosition(): number {
+        const speed = this.playbackSpeed;
+        return this._clock.position + Math.max(0, this._mediaLatency(speed)) * speed;
+    }
+
+    /**
+     * The range end (the song's end when looping without a range): finished, then the wrap or the stop (§6.2).
+     */
+    private _wrap(): void {
+        (this.finished as EventEmitter).trigger();
+        if (!this._isLooping) {
+            // back to the range start, stateChanged(Paused, stopped), as today
+            this.stop();
+            return;
+        }
+        this.diagnostics.wraps.push(this._timer.now());
+        // pause both, seek both to the range start, restart through the start handshake (§6.2):
+        // no count-in, no stateChanged
+        this._interrupt();
+        const range = this._playbackRange;
+        if (range) {
+            this._media.tickPosition = range.startTick;
+        } else {
+            this._media.timePosition = 0;
+        }
+        this._startPlayback(false);
     }
 
     // ---- delegation ----
