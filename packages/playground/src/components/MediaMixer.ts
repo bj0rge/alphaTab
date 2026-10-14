@@ -36,9 +36,9 @@ export class MediaMixer implements Mountable {
         this.root = parseHtml(html`
             <div class="at-media-mixer hidden">
                 <div class="cmp-mute-media"></div>
-                <span class="at-media-mixer-label">Audio</span>
+                <span class="at-media-mixer-label">Backing track</span>
                 <div class="cmp-media-volume"></div>
-                <span class="at-media-mixer-label">Synth</span>
+                <span class="at-media-mixer-label">Instruments</span>
                 <div class="cmp-synth-volume"></div>
             </div>
         `);
