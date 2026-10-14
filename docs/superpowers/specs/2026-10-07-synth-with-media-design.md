@@ -34,7 +34,7 @@ milliseconds from 1× to 1.5×, and within the media's own time-stretch wobble (
 | S7 | Mixing off | no synth worker or AudioWorklet created, no extra main-thread work |
 | S8 | Mixing on | CPU and main-thread cost comparable to plain synthesizer mode, no decoded audio in memory |
 | S9 | External media (YouTube) | best-effort: in sync after `mediaSyncOffsetInMilliseconds` tuning **(untested)** |
-| S10 | Loop wrap at 0.5× / 1× / 1.5× | the range's first beat clicks on every repetition within the first-click tolerance (S4b); no extra or missing clicks; ≤ 30 ms added per wrap (spike 4: 0 missing clicks at all three speeds, < 15 ms per wrap at 1×, ~24 ms at 0.5× / 1.5×) |
+| S10 | Loop wrap at 0.5× / 1× / 1.5×. Backing track only: external media wraps without pausing and stays best-effort (S9) | the range's first beat clicks on every repetition within the first-click tolerance (S4b); no extra or missing clicks; ≤ 30 ms added per wrap (spike 4: 0 missing clicks at all three speeds, < 15 ms per wrap at 1×, ~24 ms at 0.5× / 1.5×) |
 | S11 | Levels | metronome clearly audible over a mastered backing track at default levels (by ear, manual test); nothing clips (spike 5: click peak −11.4 dBFS, short-term level ~8 dB under the recording's; nothing over 0 dBFS at default levels) |
 
 ## 2. Decisions (made with the requester, in order)
@@ -242,6 +242,13 @@ same way: `MediaSynthPlayer` applies it to `synthGain`; every other implementati
 External media: hide the player's own controls (YouTube: `controls: 0`, `disablekb: 1`) so starts go
 through the app's Play button and keep their count-in (§6.2); don't overlay the player, YouTube's terms
 forbid it.
+
+If your integration starts alphaTab from the media's own play event (for example YouTube's `PLAYING` state),
+call `updatePosition()` right before `api.play()`: alphaTab then sees that the media already moves and starts
+the synthesizer at its position, with no count-in (F-6).
+
+When the media pauses, call `updatePosition()` once more (YouTube: at its `PAUSED` state, before you stop your
+timer), so the next start through alphaTab begins where the media stopped, not where it was one update earlier.
 
 Levels: at default levels the click sits about 8 dB under a mastered recording (spike 5). If it is too
 quiet, lower `backingTrackVolume` (0.35 ≈ −9 dB; external media: the player's own volume) or raise `synthVolume`; the output limiter keeps

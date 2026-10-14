@@ -170,6 +170,11 @@ export class YoutubeSync implements Mountable {
                 this.api.stop();
                 break;
             case 2: // paused
+                // the video stops up to one update after the last one: report where it stopped (spec §7)
+                if (this.player) {
+                    const output = this.api.player?.output as alphaTab.synth.IExternalMediaSynthOutput | undefined;
+                    output?.updatePosition(this.player.getCurrentTime() * 1000);
+                }
                 this.clearInterval();
                 this.api.pause();
                 break;
