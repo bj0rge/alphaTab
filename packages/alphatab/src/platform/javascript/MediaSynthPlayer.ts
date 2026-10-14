@@ -271,6 +271,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _stalled: boolean = false;
     /** External media: fit the clock anew from the next update that moves (after a start, a stall or a jump). */
     private _refitOnMove: boolean = false;
+    /**
+     * External media: an update has arrived. Until the first one alphaTab does not know where the media is (it may not
+     * have a handler yet), so a move of the paused media has nothing to be told apart from.
+     */
+    private _mediaReported: boolean = false;
 
     private _probeQueue: number[] = [];
     private _probing: boolean = false;
@@ -598,6 +603,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
             return;
         }
         this._interrupt();
+        if (this._externalClock?.isSeeking) {
+            // a jump the media has not shown yet: the media goes to alphaTab's position, which is where the next start
+            // begins; the clock's pause only knows the position from before the jump
+            this._noteMovedPausedMedia();
+        }
         this._setState(PlayerState.Paused, false);
     }
 
@@ -1214,6 +1224,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
         if (!clock) {
             return;
         }
+        this._mediaReported = true;
         if (
             (this._awaitingSynthStart || Number.isNaN(clock.mediaTimeNow())) &&
             !clock.isSeeking &&
@@ -1275,14 +1286,16 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     /**
-     * alphaTab moved the paused media (a Stop, a seek, a wrap that the app's handler paused). That position is where
-     * the next start begins, not a start of the media's own, and the updates that still show the old position (the
-     * media applies the seek a moment late) stay out of the media player and the clock: otherwise they would move
-     * alphaTab back, or, inside the clock's pause-settle window, read as the media's own start at the next Play.
+     * alphaTab moved the paused media (a Stop, a seek, a new song or moved sync points, a wrap that the app's handler
+     * paused). That position is where the next start begins, not a start of the media's own, and the updates that still
+     * show the old position (the media applies the seek a moment late) stay out of the media player and the clock:
+     * otherwise they would move alphaTab back, or, inside the clock's pause-settle window, read as the media's own
+     * start at the next Play. (Before the media's first update there is no old position to tell apart: its first update
+     * is where it is.)
      */
     private _noteMovedPausedMedia(): void {
         const clock = this._externalClock;
-        if (clock) {
+        if (clock && this._mediaReported) {
             const position = this._media.mediaTimeOfPosition;
             clock.notePausedPosition(position);
             clock.expectJumpTo(position);
@@ -1303,6 +1316,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _silenceUntilTheMediaMoves(): void {
         this.controller.stopped();
         this._synth.pause();
+        // a start silenced before the media's first update is over: no update has released it, and a later speed change
+        // would otherwise start it again (pausing the media and playing it again)
+        this._startTarget = -1;
         this._awaitingSynthStart = true;
         this._refitOnMove = true;
     }
@@ -1404,6 +1420,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
     public updateSyncPoints(syncPoints: BackingTrackSyncPoint[]): void {
         this._syncPoints = syncPoints;
         this._media.updateSyncPoints(syncPoints);
+        if (this._state !== PlayerState.Playing) {
+            // the media player seeks the paused media to the same song position on the new mapping (a new song, moved
+            // sync points): that is where the media is now, and where the next start begins
+            this._noteMovedPausedMedia();
+        }
         // loading a MIDI file drops the worker's sync points: send them again
         this._sendFollowConfig();
     }

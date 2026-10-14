@@ -656,6 +656,96 @@ describe('MediaSynthPlayerExternalTests', () => {
         }
     });
 
+    it('a-speed-change-after-the-start-check-silenced-the-synth-does-not-pause-the-media', async () => {
+        // the video buffers at its start (YouTube): nothing arrives for 600 ms and the synth goes silent. A speed
+        // change must not start the start again: that would pause the video and play it again, and the pause reaches
+        // the app as the video's own PAUSED
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.report(5000);
+        h.player.play();
+        h.timer.advance(600);
+        expect(last(h)).toBe('pause');
+        const pauses = h.handler!.pauses;
+        const plays = h.handler!.plays;
+        h.player.playbackSpeed = 0.75;
+        expect(h.handler!.pauses).toBe(pauses);
+        expect(h.handler!.plays).toBe(plays);
+        let position = 5000;
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            position += 50 * 0.75;
+            h.report(position); // the video moves, at the new speed
+        }
+        expect(last(h)).toBe('play:countIn=0');
+    });
+
+    it('a-pause-while-a-jump-is-pending-keeps-the-next-play-counting-in', async () => {
+        // a seek, then a pause before the video has shown it: the target's first update comes more than the clock's
+        // pause-settle window after the pause, and an integration that keeps reporting while paused sends the old
+        // position until then
+        const h = await externalPlaying(); // the last update: 5300
+        h.player.timePosition = 20000;
+        const target = h.media.mediaTimeOfPosition;
+        h.timer.advance(20);
+        h.player.pause();
+        h.timer.advance(30);
+        h.report(5350);
+        h.timer.advance(50);
+        h.report(5400);
+        h.timer.advance(50);
+        h.report(target); // 150 ms after the seek
+        h.timer.advance(50);
+        h.report(target);
+        h.timer.advance(50);
+        h.report(target);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(target, 3);
+    });
+
+    it('moved-sync-points-while-paused-leave-the-next-play-counting-in', async () => {
+        // the media player seeks the paused media to the same song position on the new mapping; the video reports it
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.report(5000);
+        for (const point of h.syncPoints) {
+            point.syncTime += 300;
+        }
+        h.player.updateSyncPoints(h.syncPoints);
+        const moved = h.handler!.seekTimes[h.handler!.seekTimes.length - 1];
+        expect(moved).toBeGreaterThan(5200);
+        h.timer.advance(50);
+        h.report(moved);
+        h.timer.advance(50);
+        h.report(moved);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(moved, 3);
+    });
+
+    it('a-play-right-after-a-new-song-loads-takes-the-media-updates-from-its-new-start', async () => {
+        // the next song's bar 1 comes 2 s into the recording: loading it moves the paused media there, and the updates
+        // from there are not stale
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.report(0);
+        await h.loadSong(true, 2000);
+        h.timer.advance(200);
+        h.player.play();
+        const before = h.positions.length;
+        const plays = h.synth.count('play:');
+        for (let i = 1; i <= 40; i++) {
+            h.timer.advance(50);
+            h.report(2000 + i * 50);
+        }
+        expect(h.positions.length - before).toBe(40); // every update reached the cursor
+        expect(h.synth.count('play:')).toBe(plays); // the synth was not silenced and started again
+        expect(h.externalClock!.mediaTimeNow()).toBeCloseTo(4000, 0);
+    });
+
     it('a-stale-update-after-a-stop-does-not-turn-the-next-play-into-a-media-start', async () => {
         // the video applies the Stop's seek a moment late: its next update still shows the position from before the
         // Stop, inside the clock's pause-settle window, and the one after shows the start
