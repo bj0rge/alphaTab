@@ -622,8 +622,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
 
     public playOneTimeMidiFile(midi: MidiFile): void {
         if (!this._isMixing) {
-            // the media player's own behavior, as today (§8)
-            this._media.playOneTimeMidiFile(midi);
+            // no synthesizer can play it: pause (the app sees Paused, as below) and drop it. The media player would
+            // pause itself, seek its <audio> to the song's start and play it there, none of it visible to the app
+            this.pause();
             return;
         }
         // pause both (the app sees Paused); the synth leaves follow mode and plays it on its own clock; the next
@@ -747,7 +748,11 @@ export class MediaSynthPlayer implements IAlphaSynth {
                 // the media's pre-roll: keep the cursor at the start position (§6.1)
                 return;
             }
-            this._holdBefore = -1;
+            if (!e.isSeek) {
+                // only playback releases the hold: the pre-roll's own seek report (clamped at the song's start before
+                // a lead-in) would release it ahead of the negative positions the pre-roll then reports
+                this._holdBefore = -1;
+            }
         }
         (this.positionChanged as EventEmitterOfT<PositionChangedEventArgs>).trigger(e);
     }
