@@ -393,4 +393,32 @@ describe('MediaSynthPlayerCountInTests', () => {
         expect(h.mediaOutput!.isPlaying).toBe(true);
         warning.mockRestore();
     });
+
+    for (const action of ['pause', 'stop', 'destroy'] as const) {
+        it(`a-${action}-from-the-playing-handler-starts-no-count-in`, async () => {
+            // play() reports Playing before it starts: what the app's handler did to the player wins, and neither the
+            // count-in nor the media's start runs after it
+            const h = new MediaSynthHarness();
+            await h.loadSong();
+            h.player.countInVolume = 1;
+            h.mediaOutput!.currentTime = 5000;
+            h.player.stateChanged.on(e => {
+                if (e.state === PlayerState.Playing) {
+                    h.player[action]();
+                }
+            });
+            h.player.play();
+            expect(h.mediaOutput!.isPlaying).toBe(false);
+            expect(h.timer.pending).toBe(0);
+            if (action === 'destroy') {
+                // nothing reaches the destroyed synthesizer after its destroy
+                expect(h.synth.calls.slice(h.synth.calls.indexOf('destroy') + 1)).toEqual([]);
+                return;
+            }
+            expect(h.player.state).toBe(PlayerState.Paused);
+            expect(h.states).toEqual(['Playing', action === 'stop' ? 'Stopped' : 'Paused']);
+            expect(h.synth.count('play:')).toBe(0);
+            expect(h.synth.state).toBe(PlayerState.Paused);
+        });
+    }
 });
