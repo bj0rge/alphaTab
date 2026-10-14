@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Logger } from '@coderline/alphatab/Logger';
 import { PlaybackRange } from '@coderline/alphatab/synth/PlaybackRange';
+import { PlayerState } from '@coderline/alphatab/synth/PlayerState';
 import { MediaSynthHarness } from 'test/audio/MediaSyncFakes';
 
 async function externalPlaying(): Promise<MediaSynthHarness> {
@@ -41,15 +42,22 @@ async function externalLooping(): Promise<{ h: MediaSynthHarness; start: number 
 }
 
 /**
- * The media plays on and reports every 50 ms until the range end raises finished.
+ * The media plays on and reports every 50 ms (the first report `offset` ms after the start) until the range end raises
+ * finished; returns the last position it reported.
  */
-function playToTheRangeEnd(h: MediaSynthHarness, start: number): void {
+function playToTheRangeEnd(h: MediaSynthHarness, start: number, offset: number = 0): number {
     let position = start;
+    if (offset > 0) {
+        h.timer.advance(offset);
+        position += offset;
+        h.report(position);
+    }
     for (let guard = 0; h.finished === 0 && guard < 10000; guard++) {
         h.timer.advance(50);
         position += 50;
         h.report(position);
     }
+    return position;
 }
 
 describe('MediaSynthPlayerExternalTests', () => {
@@ -105,6 +113,23 @@ describe('MediaSynthPlayerExternalTests', () => {
             h.report(position());
         }
         expect(h.externalClock!.mediaTimeNow()).toBeCloseTo(position(), 0); // where the video is, not behind it
+    });
+
+    it('a-start-fits-the-clock-without-the-paused-position', async () => {
+        // an integration that reports only while the video plays: its last update before the start is the paused
+        // position, older than the start, and not part of the first fit
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.report(5000);
+        h.timer.advance(500);
+        h.player.play(); // through alphaTab, no count-in
+        let position = 5000;
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            position += 50;
+            h.report(position); // the video moves from its first update on
+        }
+        expect(h.externalClock!.mediaTimeNow()).toBeCloseTo(position, 0);
     });
 
     it('a-wrap-seeks-without-pausing-the-media', async () => {
@@ -287,6 +312,24 @@ describe('MediaSynthPlayerExternalTests', () => {
         expect(h.player.controller.startLeads.size).toBe(0);
     });
 
+    it('a-start-inside-the-media-puts-the-synth-back-in-follow-mode', async () => {
+        // a one-time MIDI took the synth out of follow mode; a start inside the media brings it back before it plays
+        const h = new MediaSynthHarness(true);
+        const midi = await h.loadSong();
+        h.report(1000);
+        h.player.playOneTimeMidiFile(midi);
+        h.timer.advance(300);
+        h.report(1220);
+        h.player.play();
+        for (let i = 1; i <= 3; i++) {
+            h.timer.advance(50);
+            h.report(1220 + i * 50);
+        }
+        const calls = h.synth.calls;
+        expect(calls[calls.length - 1]).toBe('play:countIn=0');
+        expect(calls.lastIndexOf('followMedia:true')).toBeGreaterThan(calls.lastIndexOf('followMedia:false'));
+    });
+
     it('a-play-after-a-pause-counts-in-while-the-media-reports-its-paused-position', async () => {
         // an integration that keeps calling updatePosition() while the media is paused; the media stopped 30 ms after
         // its last update before the pause
@@ -465,5 +508,278 @@ describe('MediaSynthPlayerExternalTests', () => {
         }
         expect(h.synth.count('play:')).toBe(plays);
         expect(h.timer.pending).toBe(0);
+    });
+
+    it('the-loop-keeps-wrapping-with-the-synth', async () => {
+        // after the synth restarted at the media's position, the next range end wraps again
+        const { h, start } = await externalLooping();
+        const end = h.media.tickToMediaTime(15360);
+        let position = start;
+        let seeks = h.handler!.seekTimes.length;
+        for (let t = 0; t < 2.5 * (end - start); t += 50) {
+            h.timer.advance(50);
+            if (h.handler!.seekTimes.length !== seeks) {
+                seeks = h.handler!.seekTimes.length;
+                position = h.handler!.seekTimes[seeks - 1]; // the video jumped to the range start
+            } else {
+                position += 50;
+            }
+            h.report(position);
+        }
+        expect(h.finished).toBe(2);
+        expect(h.player.diagnostics.wraps.length).toBe(2);
+        expect(position).toBeLessThan(end);
+    });
+
+    it('a-wrap-timer-the-app-re-armed-during-the-jump-does-not-fire', async () => {
+        // the last report before the jump says the range end is due now; a timer that an app's positionChanged handler
+        // armed (the rhythm game sets a new speed there) would wrap again before the media has shown the first jump
+        const { h, start } = await externalLooping();
+        let lastTick = -1;
+        h.player.positionChanged.on(e => {
+            const jumpedBack = lastTick >= 0 && e.currentTick < lastTick - 960;
+            lastTick = e.currentTick;
+            if (jumpedBack) {
+                h.player.playbackSpeed = 1.05;
+            }
+        });
+        playToTheRangeEnd(h, start, 35); // the report before the range end comes 15 ms before it
+        expect(h.finished).toBe(1);
+        h.timer.advance(100);
+        expect(h.finished).toBe(1);
+    });
+
+    it('a-speed-change-before-the-media-shows-the-jump-does-not-wrap-again', async () => {
+        // the speed changes in the moment between the jump and the media's first update from the range start
+        const { h, start } = await externalLooping();
+        playToTheRangeEnd(h, start, 35);
+        expect(h.finished).toBe(1);
+        h.timer.advance(20);
+        h.player.playbackSpeed = 1.05;
+        h.timer.advance(100);
+        expect(h.finished).toBe(1);
+        expect(h.player.diagnostics.wraps.length).toBe(1);
+    });
+
+    it('a-seek-from-the-playing-handler-starts-the-synth-once', async () => {
+        // play() raises Playing before it starts, so the app's handler seeks first: the start that follows replaces the
+        // jump's wait for the media, and the synth is not started a second time when the clock has a fit
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.report(5000);
+        let seeked = false;
+        h.player.stateChanged.on(e => {
+            if (e.state === PlayerState.Playing && !seeked) {
+                seeked = true;
+                h.player.timePosition = 9000;
+            }
+        });
+        h.player.play();
+        const target = h.media.mediaTimeOfPosition;
+        expect(h.synth.lastSeek()).toBeCloseTo(target, 3);
+        for (let i = 0; i < 6; i++) {
+            h.timer.advance(50);
+            h.report(target + i * 50);
+        }
+        expect(h.synth.count('play:')).toBe(1);
+    });
+
+    it('a-pause-while-the-synth-waits-leaves-no-restart-behind', async () => {
+        const h = await externalPlaying();
+        h.player.timePosition = 20000; // the synth waits for the media to show the jump
+        const target = h.media.mediaTimeOfPosition;
+        h.player.pause();
+        h.timer.advance(1000);
+        h.player.play();
+        const plays = h.synth.count('play:');
+        for (let i = 0; i < 6; i++) {
+            h.timer.advance(50);
+            h.report(target + i * 50);
+        }
+        expect(h.synth.count('play:')).toBe(plays);
+    });
+
+    it('a-long-stall-leaves-no-trace-in-the-fit', async () => {
+        // the clock is fitted from where the video moves on again: the samples from before the stall would leave the
+        // line late by a good part of the stall
+        const h = await externalPlaying(); // the last update: 5300
+        for (let i = 0; i < 12; i++) {
+            h.timer.advance(50);
+            h.report(5300); // buffering for 600 ms
+        }
+        expect(last(h)).toBe('pause');
+        let position = 5300;
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            position += 50;
+            h.report(position);
+        }
+        expect(last(h)).toBe('play:countIn=0');
+        expect(h.externalClock!.mediaTimeNow()).toBeCloseTo(position, 0);
+    });
+
+    it('a-speed-change-drops-the-fit-at-the-old-rate', async () => {
+        const h = await externalPlaying();
+        expect(h.externalClock!.mediaTimeNow()).not.toBeNaN();
+        h.player.playbackSpeed = 0.75;
+        expect(h.externalClock!.mediaTimeNow()).toBeNaN();
+        let position = 5300;
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            position += 50 * 0.75;
+            h.report(position);
+        }
+        expect(h.externalClock!.mediaTimeNow()).toBeCloseTo(position, 0);
+    });
+
+    it('a-media-that-has-not-started-after-a-stop-or-a-seek-silences-the-synth', async () => {
+        // the integration reports only while the video plays (alphaTab's youtube-sync demo): nothing comes from a video
+        // that is still buffering. The seek alphaTab did while paused is not shown yet, and no reason to keep playing
+        for (const move of ['stop', 'seek'] as const) {
+            const h = await externalPlaying();
+            if (move === 'stop') {
+                h.player.stop();
+            } else {
+                h.player.pause();
+                h.player.timePosition = 20000;
+            }
+            const position = h.media.mediaTimeOfPosition;
+            h.timer.advance(1000);
+            h.player.play();
+            h.timer.advance(600);
+            expect(last(h)).toBe('pause');
+            for (let i = 1; i <= 3; i++) {
+                h.timer.advance(50);
+                h.report(position + i * 50);
+            }
+            expect(last(h)).toBe('play:countIn=0'); // the video moves: the synth restarts at its position
+        }
+    });
+
+    it('a-stale-update-after-a-stop-does-not-turn-the-next-play-into-a-media-start', async () => {
+        // the video applies the Stop's seek a moment late: its next update still shows the position from before the
+        // Stop, inside the clock's pause-settle window, and the one after shows the start
+        const h = await externalPlaying(); // the last update: 5300
+        h.player.stop();
+        h.timer.advance(90);
+        h.report(5330);
+        h.timer.advance(50);
+        h.report(0);
+        h.timer.advance(50);
+        h.report(0);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.handler!.plays).toBe(1); // only the first Play started the media; the second waits for the hand-off
+    });
+
+    it('a-stale-update-after-a-stop-does-not-move-the-next-start', async () => {
+        // an integration reports the video once when it pauses (spec §7): after a Stop that can be the position from
+        // before the Stop's seek, and no update follows
+        const h = await externalPlaying();
+        h.player.stop();
+        h.timer.advance(30);
+        h.report(5330);
+        expect(h.player.timePosition).toBe(0);
+        h.timer.advance(1000);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(0, 3); // the song's start, not where the video was
+    });
+
+    it('a-stale-update-after-a-seek-while-paused-does-not-move-the-next-start', async () => {
+        const h = await externalPlaying();
+        h.player.pause();
+        h.timer.advance(30);
+        h.report(5330); // where the media stopped
+        h.timer.advance(1000);
+        h.player.timePosition = 20000; // the user seeks while paused
+        const target = h.media.mediaTimeOfPosition;
+        h.timer.advance(30);
+        h.report(5330); // the video has not applied the seek yet
+        expect(h.media.mediaTimeOfPosition).toBeCloseTo(target, 3);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(target, 3);
+    });
+
+    it('a-stale-update-after-a-handler-paused-the-wrap-does-not-move-the-next-start', async () => {
+        const { h, start } = await externalLooping();
+        h.player.finished.on(() => h.player.pause());
+        const end = playToTheRangeEnd(h, start);
+        h.timer.advance(90);
+        h.report(end + 50); // the video has not applied the seek to the range start yet
+        h.timer.advance(50);
+        h.report(start);
+        h.timer.advance(50);
+        h.report(start);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(start, 3);
+    });
+
+    it('a-seek-right-after-play-is-not-held-back-by-the-start', async () => {
+        // a start holds the cursor at its start position until the media's first update; a seek in that moment moves it
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.report(5000);
+        h.player.play();
+        h.player.timePosition = 2000;
+        const target = h.media.mediaTimeOfPosition;
+        const before = h.positions.length;
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            h.report(target + i * 50);
+        }
+        expect(h.positions.length).toBeGreaterThan(before);
+        expect(h.positions[h.positions.length - 1]).toBeLessThan(3000); // at the seek, not held at the start (5000+)
+    });
+
+    it('a-speed-change-after-a-seek-right-after-play-keeps-the-seek', async () => {
+        // the seek ended the start: a speed change must not start it again at its old position
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.report(5000);
+        h.player.play();
+        h.player.timePosition = 2000;
+        const target = h.media.mediaTimeOfPosition;
+        h.player.playbackSpeed = 0.75;
+        expect(h.handler!.seekTimes[h.handler!.seekTimes.length - 1]).toBeCloseTo(target, 3);
+    });
+
+    it('updates-before-the-context-runs-stay-out-of-the-fit', async () => {
+        // the context renders nothing before the page's first gesture: its heard time stands still, so the updates
+        // until then share one stamp and would bend the first fit for as long as they stay in its window
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.graph.running = false;
+        h.report(1000);
+        h.timer.advance(50);
+        h.report(1050); // the media started itself
+        h.player.play(); // F-6: the synth waits for the media's clock
+        let position = 1050;
+        for (let i = 0; i < 30; i++) {
+            h.timer.advance(50);
+            position += 50;
+            h.report(position);
+        }
+        expect(h.synth.count('play:')).toBe(0);
+        h.graph.start(); // the page's first gesture resumes the context
+        const resumedAt = h.timer.time;
+        let startedAfter = -1;
+        for (let i = 0; i < 60 && startedAfter < 0; i++) {
+            h.timer.advance(50);
+            position += 50;
+            h.report(position);
+            if (h.synth.count('play:') > 0) {
+                startedAfter = h.timer.time - resumedAt;
+            }
+        }
+        // the clock has a fit again after three updates over 100 ms
+        expect(startedAfter).toBeGreaterThan(0);
+        expect(startedAfter).toBeLessThanOrEqual(250);
     });
 });
