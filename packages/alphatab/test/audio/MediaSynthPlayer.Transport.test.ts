@@ -359,4 +359,64 @@ describe('MediaSynthPlayerTransportTests', () => {
         expect(h.positions.length).toBeGreaterThan(0);
         expect(h.positions[h.positions.length - 1]).toBeLessThan(start);
     });
+
+    it('a-speed-change-while-the-media-seeks-starts-again-at-the-new-speed', async () => {
+        // the start waits for the pre-roll seek, planned at 0.5x: the plan, the controller's speed and the start lead
+        // it learns must be the new speed's, and the start stays where Play was pressed (not at the pre-roll start)
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.player.playbackSpeed = 0.5;
+        h.mediaOutput!.currentTime = 5000;
+        h.backingClock!.isSeeking = true;
+        h.player.play();
+        h.player.playbackSpeed = 1;
+        h.backingClock!.finishSeek();
+        expect(h.player.controller.speed).toBe(1);
+        expect(h.synth.count('play:')).toBe(1); // the first plan never ran
+        expect(h.synth.lastSeek()).toBeCloseTo(5000, 3);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            h.mediaOutput!.advance(50);
+            h.synthOutput.stamp(0, h.mediaOutput!.currentTime + 6); // the synth came out 6 ms ahead
+        }
+        expect(h.player.controller.startLeads.has(0.5)).toBe(false);
+        expect(h.player.controller.startLeads.get(1)).toBe(-6);
+    });
+
+    it('a-speed-change-before-the-first-position-does-not-hold-the-cursor-back', async () => {
+        // the hold is in the units of the speed it was set at (a faster speed halves them): the speed change drops it
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.probeLatencies.set(0.5, 60);
+        h.player.playbackSpeed = 0.5;
+        h.player.timePosition = 10000;
+        h.player.play();
+        h.positions.length = 0;
+        h.player.playbackSpeed = 1;
+        for (let i = 0; i < 2; i++) {
+            h.timer.advance(50);
+            h.mediaOutput!.advance(50);
+        }
+        expect(h.positions.length).toBeGreaterThan(0);
+    });
+
+    it('a-seek-from-the-playing-handler-leaves-no-media-start-behind-a-pause', async () => {
+        // play() reports Playing before it starts: a seek in the app's handler runs a full handshake, then Play runs its
+        // own. The first one's media-delay timer must not start the media after the Pause
+        const h = new MediaSynthHarness();
+        await h.loadSong();
+        h.player.controller.startLeads.set(1, 50);
+        h.player.stateChanged.on(e => {
+            if (e.state === PlayerState.Playing) {
+                h.player.timePosition = 8000;
+            }
+        });
+        h.player.play();
+        h.player.pause();
+        h.timer.advance(100);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(h.timer.pending).toBe(0);
+    });
 });
