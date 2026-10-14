@@ -23,6 +23,35 @@ function last(h: MediaSynthHarness): string {
     return h.synth.calls[h.synth.calls.length - 1];
 }
 
+/**
+ * A looping range, played through alphaTab from its start.
+ */
+async function externalLooping(): Promise<{ h: MediaSynthHarness; start: number }> {
+    const h = new MediaSynthHarness(true);
+    await h.loadSong();
+    const range = new PlaybackRange();
+    range.startTick = 7680;
+    range.endTick = 15360;
+    h.player.isLooping = true;
+    h.player.playbackRange = range;
+    const start = h.media.tickToMediaTime(range.startTick);
+    h.report(start);
+    h.player.play();
+    return { h, start };
+}
+
+/**
+ * The media plays on and reports every 50 ms until the range end raises finished.
+ */
+function playToTheRangeEnd(h: MediaSynthHarness, start: number): void {
+    let position = start;
+    for (let guard = 0; h.finished === 0 && guard < 10000; guard++) {
+        h.timer.advance(50);
+        position += 50;
+        h.report(position);
+    }
+}
+
 describe('MediaSynthPlayerExternalTests', () => {
     it('a-seek-silences-the-synth-until-the-clock-has-a-fit-again', async () => {
         const h = await externalPlaying();
@@ -401,5 +430,40 @@ describe('MediaSynthPlayerExternalTests', () => {
             h.report(5000 + i * 50);
         }
         expect(last(h)).toBe('play:countIn=0');
+    });
+
+    it('a-finished-handler-that-clears-looping-still-gets-the-last-pass', async () => {
+        // "loop N times": whether the pass wraps is decided before the app's finished handler runs
+        const { h, start } = await externalLooping();
+        h.player.finished.on(() => {
+            h.player.isLooping = false;
+        });
+        playToTheRangeEnd(h, start);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        expect(h.handler!.seekTimes[h.handler!.seekTimes.length - 1]).toBeCloseTo(start, 3);
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            h.report(start + i * 50);
+        }
+        expect(last(h)).toBe('play:countIn=0');
+    });
+
+    it('a-finished-handler-that-pauses-ends-the-external-wrap', async () => {
+        // the app's pause wins over the wrap: the media goes back to the range start but nothing restarts
+        const { h, start } = await externalLooping();
+        h.player.finished.on(() => h.player.pause());
+        playToTheRangeEnd(h, start);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(h.player.diagnostics.wraps.length).toBe(0);
+        expect(h.handler!.seekTimes[h.handler!.seekTimes.length - 1]).toBeCloseTo(start, 3);
+        const plays = h.synth.count('play:');
+        for (let i = 0; i < 3; i++) {
+            h.timer.advance(50);
+            h.report(start + i * 50);
+        }
+        expect(h.synth.count('play:')).toBe(plays);
+        expect(h.timer.pending).toBe(0);
     });
 });

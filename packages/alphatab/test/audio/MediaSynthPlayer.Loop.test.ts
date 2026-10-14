@@ -69,7 +69,8 @@ describe('MediaSynthPlayerLoopTests', () => {
         h.player.play();
         run(h, (end - start) / 1.5 + 100);
         expect(h.finished).toBe(1);
-        expect(h.mediaOutput!.seekTimes.some(t => Math.abs(t - (start - 60)) < 0.01)).toBe(true);
+        // the first Play at 1.5x pre-rolls too: the wrap's own pre-roll is the last seek
+        expect(h.mediaOutput!.seekTimes[h.mediaOutput!.seekTimes.length - 1]).toBeCloseTo(start - 60, 3);
     });
 
     it('a-wrap-below-1x-comes-before-the-heard-range-end', async () => {
@@ -327,5 +328,47 @@ describe('MediaSynthPlayerLoopTests', () => {
         expect(h.finished).toBe(1);
         expect(h.states).toEqual(['Playing']);
         expect(h.timer.pending).toBe(0);
+    });
+
+    it('a-finished-handler-that-clears-looping-still-gets-the-last-pass', async () => {
+        // "loop N times": the app clears isLooping in its finished handler. Whether the pass wraps is decided before the
+        // handler runs, as the synthesizer alone does, so this pass still wraps and the next range end stops
+        const { h, start, end } = await looping();
+        h.player.finished.on(() => {
+            h.player.isLooping = false;
+        });
+        h.player.play();
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        run(h, end - start + 100);
+        expect(h.finished).toBe(2);
+        expect(h.states).toEqual(['Playing', 'Stopped']);
+    });
+
+    it('a-finished-handler-that-sets-looping-at-a-range-end-without-a-loop-still-stops', async () => {
+        const { h, start, end } = await looping(1, false);
+        h.player.finished.on(() => {
+            h.player.isLooping = true;
+        });
+        h.player.play();
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing', 'Stopped']);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.timer.pending).toBe(0);
+    });
+
+    it('a-pass-the-finished-handler-ends-leaves-no-wrap-record', async () => {
+        // diagnostics.wraps lists the wraps that restarted
+        for (const interrupt of ['pause', 'stop'] as const) {
+            const { h, start, end } = await looping();
+            h.player.finished.on(() => h.player[interrupt]());
+            h.player.play();
+            run(h, end - start + 100);
+            expect(h.finished).toBe(1);
+            expect(h.player.diagnostics.wraps.length).toBe(0);
+        }
     });
 });
