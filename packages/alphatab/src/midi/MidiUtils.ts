@@ -20,6 +20,18 @@ export class MidiUtils {
     }
 
     /**
+     * Converts the given midi tick duration into milliseconds without truncating to whole milliseconds.
+     * Use this when durations are summed up and need to match the time axis of the sequencer.
+     * @param ticks The duration in midi ticks
+     * @param tempo The current tempo in BPM.
+     * @returns The converted duration in milliseconds.
+     */
+    public static ticksToFractionalMillis(ticks: number, tempo: number): number {
+        // multiply first: whole millisecond results stay exact
+        return (ticks * 60000.0) / (tempo * MidiUtils.QuarterTime);
+    }
+
+    /**
      * Converts the given midi tick duration into milliseconds.
      * @param millis The duration in milliseconds
      * @param tempo The current tempo in BPM.

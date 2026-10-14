@@ -82,10 +82,49 @@ class RasgueadoInfo {
 class PlayThroughContext {
     public synthTick: number = 0;
     public synthTime: number = 0;
-    public currentTempo: number = 0;
     public automationToSyncPoint: Map<Automation, BackingTrackSyncPoint> = new Map<Automation, BackingTrackSyncPoint>();
     public syncPoints!: BackingTrackSyncPoint[];
     public createNewSyncPoints: boolean = false;
+
+    private _currentTempo: number = 0;
+    private _tempoChangeTick: number = 0;
+    private _tempoChangeTime: number = 0;
+
+    public get currentTempo(): number {
+        return this._currentTempo;
+    }
+
+    /**
+     * Switches to the given tempo at the current position.
+     */
+    public changeTempo(tempo: number) {
+        this._currentTempo = tempo;
+        this._tempoChangeTick = this.synthTick;
+        this._tempoChangeTime = this.synthTime;
+    }
+
+    /**
+     * Moves forward to the given tick with the current tempo.
+     * The time is not truncated to whole milliseconds, it has to match the time axis of the sequencer.
+     * It is computed from the last tempo change instead of being summed up bar by bar
+     * to avoid accumulating floating point errors.
+     */
+    public advanceTo(tick: number) {
+        this.synthTick = tick;
+        this.synthTime =
+            this._tempoChangeTime + MidiUtils.ticksToFractionalMillis(tick - this._tempoChangeTick, this._currentTempo);
+    }
+
+    /**
+     * Moves to the given tick without any time passing.
+     */
+    public jumpTo(tick: number) {
+        if (tick !== this.synthTick) {
+            this.synthTick = tick;
+            this._tempoChangeTick = tick;
+            this._tempoChangeTime = this.synthTime;
+        }
+    }
 }
 
 /**
@@ -346,7 +385,7 @@ export class MidiFileGenerator {
         const controller: MidiPlaybackController = new MidiPlaybackController(score);
 
         const playContext = new PlayThroughContext();
-        playContext.currentTempo = score.tempo;
+        playContext.changeTempo(score.tempo);
         playContext.syncPoints = syncPoints;
         playContext.createNewSyncPoints = createNewSyncPoints;
         let previousMasterBar: MasterBar | null = null;
@@ -369,9 +408,10 @@ export class MidiFileGenerator {
                 const trackTempo =
                     bar.tempoAutomations.length > 0 ? bar.tempoAutomations[0].value : playContext.currentTempo;
                 // the time position is tracked consistently on the play-through (respecting tempo changes)
-                generateTracks(index, currentTick, trackTempo, playContext.synthTime);
+                // beat timers are shown and stored as whole milliseconds
+                generateTracks(index, currentTick, trackTempo, playContext.synthTime | 0);
 
-                playContext.synthTick = currentTick;
+                playContext.jumpTo(currentTick);
                 MidiFileGenerator._processBarTime(bar, occurence, playContext);
             }
 
@@ -406,9 +446,10 @@ export class MidiFileGenerator {
                 }
 
                 backingTrackSyncPoint.synthTime =
-                    lastSyncPoint.synthTime + MidiUtils.ticksToMillis(remainingTicks, lastSyncPoint.synthBpm);
+                    lastSyncPoint.synthTime + MidiUtils.ticksToFractionalMillis(remainingTicks, lastSyncPoint.synthBpm);
                 backingTrackSyncPoint.syncTime =
-                    lastSyncPoint.syncTime + MidiUtils.ticksToMillis(remainingTicks, backingTrackSyncPoint.syncBpm);
+                    lastSyncPoint.syncTime +
+                    MidiUtils.ticksToFractionalMillis(remainingTicks, backingTrackSyncPoint.syncBpm);
 
                 // update the previous sync point according to the new time
                 if (!playContext.createNewSyncPoints) {
@@ -440,8 +481,7 @@ export class MidiFileGenerator {
         const endTick = barStartTick + duration;
         const tickOffset = endTick - context.synthTick;
         if (tickOffset > 0) {
-            context.synthTime += MidiUtils.ticksToMillis(tickOffset, context.currentTempo);
-            context.synthTick = endTick;
+            context.advanceTo(endTick);
         }
     }
 
@@ -449,7 +489,7 @@ export class MidiFileGenerator {
         // start marker
         const barStartTick = context.synthTick;
         if (bar.index === 0 && occurence === 0) {
-            context.currentTempo = bar.score.tempo;
+            context.changeTempo(bar.score.tempo);
 
             const backingTrackSyncPoint = new BackingTrackSyncPoint();
             backingTrackSyncPoint.masterBarIndex = bar.index;
@@ -468,12 +508,11 @@ export class MidiFileGenerator {
             const absoluteTick = barStartTick + ModelUtils.ratioPositionToTick(bar, change.ratioPosition);
             const tickOffset = absoluteTick - context.synthTick;
             if (tickOffset > 0) {
-                context.synthTick = absoluteTick;
-                context.synthTime += MidiUtils.ticksToMillis(tickOffset, context.currentTempo);
+                context.advanceTo(absoluteTick);
             }
 
             if (change.value !== context.currentTempo) {
-                context.currentTempo = change.value;
+                context.changeTempo(change.value);
 
                 const backingTrackSyncPoint = new BackingTrackSyncPoint();
                 backingTrackSyncPoint.masterBarIndex = bar.index;
@@ -512,19 +551,17 @@ export class MidiFileGenerator {
                 tickOffset = absoluteTick - context.synthTick;
 
                 if (tickOffset > 0) {
-                    context.synthTick = absoluteTick;
-                    context.synthTime += MidiUtils.ticksToMillis(tickOffset, context.currentTempo);
+                    context.advanceTo(absoluteTick);
                 }
 
-                context.currentTempo = tempoChange.value;
+                context.changeTempo(tempoChange.value);
                 tempoChangeIndex++;
             }
 
             // process time until sync point
             tickOffset = syncPointTick - context.synthTick;
             if (tickOffset > 0) {
-                context.synthTick = syncPointTick;
-                context.synthTime += MidiUtils.ticksToMillis(tickOffset, context.currentTempo);
+                context.advanceTo(syncPointTick);
             }
 
             // update the previous sync point according to the new time
@@ -555,11 +592,10 @@ export class MidiFileGenerator {
             const absoluteTick = barStartTick + ModelUtils.ratioPositionToTick(bar, tempoChange.ratioPosition);
             tickOffset = absoluteTick - context.synthTick;
             if (tickOffset > 0) {
-                context.synthTick = absoluteTick;
-                context.synthTime += MidiUtils.ticksToMillis(tickOffset, context.currentTempo);
+                context.advanceTo(absoluteTick);
             }
 
-            context.currentTempo = tempoChange.value;
+            context.changeTempo(tempoChange.value);
             tempoChangeIndex++;
         }
     }
@@ -571,11 +607,10 @@ export class MidiFileGenerator {
             const absoluteTick = barStartTick + ModelUtils.ratioPositionToTick(bar, changes.ratioPosition);
             const tickOffset = absoluteTick - context.synthTick;
             if (tickOffset > 0) {
-                context.synthTick = absoluteTick;
-                context.synthTime += MidiUtils.ticksToMillis(tickOffset, context.currentTempo);
+                context.advanceTo(absoluteTick);
             }
 
-            context.currentTempo = changes.value;
+            context.changeTempo(changes.value);
         }
     }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type IEventEmitterOfT, type IEventEmitter, EventEmitterOfT, EventEmitter } from '@coderline/alphatab/EventEmitter';
+import {
+    type IEventEmitterOfT,
+    type IEventEmitter,
+    EventEmitterOfT,
+    EventEmitter
+} from '@coderline/alphatab/EventEmitter';
 import { ScoreLoader } from '@coderline/alphatab/importer/ScoreLoader';
 import { AlphaSynthMidiFileHandler } from '@coderline/alphatab/midi/AlphaSynthMidiFileHandler';
 import type { AlphaTabMetronomeEvent } from '@coderline/alphatab/midi/MidiEvent';
@@ -356,6 +361,67 @@ describe('SyncPointTests', () => {
 
         expect(events.map(e => `${e.currentTime},${e.originalTempo},${e.modifiedTempo}`)).toMatchSnapshot();
         expect(testOutput.seekTimes).toMatchSnapshot();
+    });
+
+    /**
+     * See #2952: the media is synchronized exactly at the first and the last bar,
+     * the reported position must stay on the media also in between.
+     */
+    function testLongSongStaysOnMedia(tempo: number) {
+        const barCount = 201;
+        const ticksPerBar = 4 * 960;
+        // the parser only accepts whole milliseconds
+        const lastSyncPointTime = Math.round(((barCount - 1) * 4 * 60000) / tempo);
+
+        let tex = `\\tempo ${tempo} . `;
+        for (let i = 0; i < barCount; i++) {
+            if (i > 0) {
+                tex += ' | ';
+            }
+            tex += 'C4.4*4';
+        }
+        tex += ` . \\sync 0 0 0 \\sync ${barCount - 1} 0 ${lastSyncPointTime}`;
+        const score = ScoreLoader.loadAlphaTex(tex);
+
+        const midi = new MidiFile();
+        const handler = new AlphaSynthMidiFileHandler(midi);
+        const generator = new MidiFileGenerator(score, new Settings(), handler);
+        generator.generate();
+
+        const player = new ExternalMediaPlayer(500);
+        const mediaHandler = new TestExternalMediaHandler(player.output as IExternalMediaSynthOutput);
+        mediaHandler.backingTrackDuration = lastSyncPointTime + 10000;
+        (player.output as IExternalMediaSynthOutput).handler = mediaHandler;
+
+        player.loadMidiFile(midi);
+        player.loadBackingTrack(score);
+        player.updateSyncPoints(generator.syncPoints);
+
+        const events: PositionChangedEventArgs[] = [];
+        player.positionChanged.on(e => {
+            events.push(e);
+        });
+        player.play();
+
+        const bars = [50, 100, 200];
+        for (let i = 0; i < bars.length; i++) {
+            const bar = bars[i];
+            const mediaTime = ((bar - 1) * lastSyncPointTime) / (barCount - 1);
+            mediaHandler.simulateSeek(mediaTime);
+
+            const expectedTick = (bar - 1) * ticksPerBar;
+            const actualTick = events[events.length - 1].currentTick;
+            expect(Math.abs(actualTick - expectedTick), `bar ${bar}: tick ${actualTick}`).toBeLessThanOrEqual(1);
+        }
+    }
+
+    it('long-song-stays-on-media-fractional-beat-duration', () => {
+        // a quarter lasts 405.405...ms
+        testLongSongStaysOnMedia(148);
+    });
+
+    it('long-song-stays-on-media-whole-beat-duration', () => {
+        testLongSongStaysOnMedia(120);
     });
 });
 
