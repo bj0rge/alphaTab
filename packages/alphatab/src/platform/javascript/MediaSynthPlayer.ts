@@ -854,6 +854,10 @@ export class MediaSynthPlayer implements IAlphaSynth {
         if (preRoll > 0) {
             // the media waits, paused, at its pre-roll start
             this._media.seekMediaTo(target - preRoll);
+        } else if (target !== this._clock.position) {
+            // external media whose clock shows another position than alphaTab's: the media waits at alphaTab's (a start
+            // without a count-in seeks it there too)
+            this._media.seekMediaTo(target);
         }
         this._countIn = new CountInHandOff(target, speed, preRoll);
         this._synth.seekToMediaTime(target);
@@ -1291,19 +1295,18 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     /**
-     * alphaTab moved the paused media (a Stop, a seek, a new song or moved sync points, a wrap that the app's handler
-     * paused). That position is where the next start begins, not a start of the media's own, and the updates that still
-     * show the old position (the media applies the seek a moment late) stay out of the media player and the clock:
-     * otherwise they would move alphaTab back, or, inside the clock's pause-settle window, read as the media's own
-     * start at the next Play. (Before the media's first update there is no old position to tell apart: its first update
-     * is where it is.)
+     * alphaTab moved the paused media (a Stop, a seek: the API's own move back to the beat's start on every Pause among
+     * them, a new song or moved sync points, a wrap that the app's handler paused, a jump the media had not shown when
+     * it paused). That position is where the next start begins, not a start of the media's own, and the updates that
+     * still show the old position (the media applies the seek a moment late) stay out of the media player and the
+     * clock: otherwise they would move alphaTab back, or read as the media's own start at the next Play. Such a move can
+     * be shorter than the clock's jump tolerance, so the clock tells them by the side of the move they are on. (Before
+     * the media's first update there is no old position to tell apart: its first update is where it is.)
      */
     private _noteMovedPausedMedia(): void {
         const clock = this._externalClock;
         if (clock && this._mediaReported) {
-            const position = this._media.mediaTimeOfPosition;
-            clock.notePausedPosition(position);
-            clock.expectJumpTo(position);
+            clock.notePausedPosition(this._media.mediaTimeOfPosition);
         }
     }
 

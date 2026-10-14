@@ -204,7 +204,7 @@ describe('ExternalMediaClockTests', () => {
         clock.expectJumpTo(20000); // a seek while playing, paused before an update showed it
         clock.notePausedPosition(9000); // a seek while paused; no update follows
         expect(clock.position).toBe(9000);
-        expect(clock.isSeeking).toBe(false);
+        expect(clock.isFromBeforeJump(9000)).toBe(false); // the jump to 20000 is replaced
         expect(clock.movedSincePause()).toBe(false);
     });
 
@@ -251,5 +251,103 @@ describe('ExternalMediaClockTests', () => {
         feed(clock, time, 2.1, 2.4, t => t * 1000);
         expect(clock.isSeeking).toBe(false); // given up: the media's own position counts again
         expect(clock.mediaTimeAt(2.4 * 48000)).toBeCloseTo(2400, 6);
+    });
+
+    /**
+     * The media played up to 5300 (its last update, at 1 s) and paused at 1.03 s, 30 ms on.
+     */
+    function pausedAt5300(): { clock: ExternalMediaClock; time: FakeHeardTime } {
+        const time = new FakeHeardTime();
+        const clock = new ExternalMediaClock(time, () => 0);
+        clock.setPlaying(true);
+        feed(clock, time, 0, 1, t => 4300 + Math.round(t * 1000));
+        time.heard = 1.03;
+        clock.setPlaying(false);
+        return { clock, time };
+    }
+
+    it('updates-from-before-a-paused-move-are-told-by-its-side', () => {
+        // alphaTab moves the paused media back 300 ms (the API's move to the beat's start on Pause): until the media
+        // shows the move it shows where it stopped, at or after its last update, which is within 500 ms of the target
+        const { clock, time } = pausedAt5300();
+        clock.notePausedPosition(5000);
+        expect(clock.isFromBeforeJump(5300)).toBe(true);
+        expect(clock.isFromBeforeJump(5320)).toBe(true);
+        time.heard = 1.05;
+        clock.addSample(5300);
+        time.heard = 1.07;
+        clock.addSample(5320);
+        expect(clock.position).toBe(5000);
+        expect(clock.isSeeking).toBe(true);
+        expect(clock.isFromBeforeJump(5000)).toBe(false);
+        time.heard = 1.1;
+        clock.addSample(5000); // the media shows the move: the wait is over
+        expect(clock.isSeeking).toBe(false);
+        expect(clock.position).toBe(5000);
+    });
+
+    it('a-stale-update-inside-the-pause-settle-window-is-no-start-after-a-paused-move', () => {
+        const { clock, time } = pausedAt5300();
+        clock.notePausedPosition(5000);
+        time.heard = 1.05;
+        clock.addSample(5330); // where the media stopped: it has not applied the seek yet
+        time.heard = 1.3;
+        clock.addSample(5000); // now it has
+        expect(clock.movedSincePause()).toBe(false);
+    });
+
+    it('a-paused-move-ends-the-pause-settle-window', () => {
+        // a short move forward: where the media stopped (30 ms after its last update) is past the middle of the move,
+        // so that update counts as after it; the paused position stays the target all the same
+        const { clock, time } = pausedAt5300();
+        clock.notePausedPosition(5350);
+        time.heard = 1.05;
+        clock.addSample(5330); // where the media stopped: it has not applied the seek yet
+        time.heard = 1.15;
+        clock.addSample(5350); // now it has
+        expect(clock.movedSincePause()).toBe(false);
+    });
+
+    it('a-paused-move-still-waited-for-when-the-media-plays-goes-by-the-jump-tolerance', () => {
+        // the playing media moves from the target toward and past where it was: the side of the move would drop its
+        // fresh updates when they are sparse
+        const { clock } = pausedAt5300();
+        clock.notePausedPosition(5000);
+        expect(clock.isFromBeforeJump(5250)).toBe(true); // paused: nearer where the media was
+        clock.setPlaying(true);
+        expect(clock.isFromBeforeJump(5250)).toBe(false); // within 500 ms of the target
+        expect(clock.isFromBeforeJump(5600)).toBe(true);
+    });
+
+    it('two-paused-moves-in-a-row-wait-from-where-the-media-was-before-the-first', () => {
+        // the API's move back to the beat's start (5000), then a click a little ahead (5500), before the media showed
+        // either: it can still show where it stopped or the first move
+        const { clock, time } = pausedAt5300();
+        clock.notePausedPosition(5000);
+        time.heard = 1.05;
+        clock.notePausedPosition(5500);
+        expect(clock.isFromBeforeJump(5300)).toBe(true);
+        expect(clock.isFromBeforeJump(5000)).toBe(true);
+        expect(clock.isFromBeforeJump(5500)).toBe(false);
+        time.heard = 1.07;
+        clock.addSample(5300);
+        clock.addSample(5000);
+        expect(clock.position).toBe(5500);
+    });
+
+    it('a-jump-while-playing-keeps-the-jump-tolerance', () => {
+        // the playing media moves toward where it was: within 500 ms of the target an update counts, also once the
+        // media is paused before it showed the jump
+        const time = new FakeHeardTime();
+        const clock = new ExternalMediaClock(time, () => 0);
+        clock.setPlaying(true);
+        feed(clock, time, 0, 1, t => 4300 + Math.round(t * 1000)); // the last update: 5300
+        clock.expectJumpTo(5000);
+        expect(clock.isFromBeforeJump(5320)).toBe(false); // nearer where the media was, within 500 ms of the target
+        expect(clock.isFromBeforeJump(5600)).toBe(true);
+        time.heard = 1.03;
+        clock.setPlaying(false);
+        expect(clock.isFromBeforeJump(5320)).toBe(false);
+        expect(clock.isFromBeforeJump(5600)).toBe(true);
     });
 });
