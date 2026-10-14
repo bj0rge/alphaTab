@@ -49,6 +49,8 @@ export class PlayerSettingsSerializer {
         o.set("slide", SlidePlaybackSettingsSerializer.toJson(obj.slide));
         o.set("playtripletfeel", obj.playTripletFeel);
         o.set("buffertimeinmilliseconds", obj.bufferTimeInMilliseconds);
+        o.set("enablesynthesizerwithmedia", obj.enableSynthesizerWithMedia);
+        o.set("mediasyncoffsetinmilliseconds", obj.mediaSyncOffsetInMilliseconds);
         return o;
     }
     public static setProperty(obj: PlayerSettings, property: string, v: unknown): boolean {
@@ -119,6 +121,12 @@ export class PlayerSettingsSerializer {
                 return true;
             case "buffertimeinmilliseconds":
                 obj.bufferTimeInMilliseconds = v! as number;
+                return true;
+            case "enablesynthesizerwithmedia":
+                obj.enableSynthesizerWithMedia = v! as boolean;
+                return true;
+            case "mediasyncoffsetinmilliseconds":
+                obj.mediaSyncOffsetInMilliseconds = v! as number;
                 return true;
         }
         if (["vibrato"].indexOf(property) >= 0) {

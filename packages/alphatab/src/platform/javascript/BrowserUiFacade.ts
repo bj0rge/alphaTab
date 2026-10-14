@@ -29,10 +29,21 @@ import { WebPlatform } from '@coderline/alphatab/platform/javascript/WebPlatform
 import { AlphaTabError, AlphaTabErrorType } from '@coderline/alphatab/AlphaTabError';
 import { AlphaSynthAudioWorkletOutput } from '@coderline/alphatab/platform/javascript/AlphaSynthAudioWorkletOutput';
 import { ScalableHtmlElementContainer } from '@coderline/alphatab/platform/javascript/ScalableHtmlElementContainer';
-import { PlayerOutputMode, ScrollMode } from '@coderline/alphatab/PlayerSettings';
+import { PlayerMode, PlayerOutputMode, ScrollMode } from '@coderline/alphatab/PlayerSettings';
 import type { SettingsJson } from '@coderline/alphatab/generated/SettingsJson';
 import { AudioElementBackingTrackSynthOutput } from '@coderline/alphatab/platform/javascript/AudioElementBackingTrackSynthOutput';
+import {
+    AudioElementClockSource,
+    BackingTrackMediaClock,
+    ExternalMediaClock
+} from '@coderline/alphatab/platform/javascript/MediaClock';
+import { MediaLatencyProbe } from '@coderline/alphatab/platform/javascript/MediaLatencyProbe';
+import { MediaSyncLearnedValues } from '@coderline/alphatab/platform/javascript/MediaSyncController';
+import { MediaSynthPlayer, MediaSynthPlayerParts } from '@coderline/alphatab/platform/javascript/MediaSynthPlayer';
+import { BrowserMediaTimer } from '@coderline/alphatab/platform/javascript/MediaSynthTypes';
+import { WebAudioMixGraph } from '@coderline/alphatab/platform/javascript/WebAudioMixGraph';
 import { BackingTrackPlayer } from '@coderline/alphatab/synth/BackingTrackPlayer';
+import { ExternalMediaPlayer } from '@coderline/alphatab/synth/ExternalMediaPlayer';
 import { CoreSettings, FontFileFormat } from '@coderline/alphatab/CoreSettings';
 import type { IAudioExporterWorker } from '@coderline/alphatab/synth/IAudioExporter';
 import { AlphaSynthAudioExporterWorkerApi } from '@coderline/alphatab/platform/worker/AlphaSynthAudioExporterWorkerApi';
@@ -1047,6 +1058,73 @@ export class BrowserUiFacade implements IUiFacade<unknown> {
             new AudioElementBackingTrackSynthOutput(),
             this._api.settings.player.bufferTimeInMilliseconds
         );
+    }
+
+    /**
+     * The synthesizer along a backing track or external media (spec §7). Null (the media plays alone) when
+     * AudioWorklets can't be used.
+     */
+    public createMediaSynthPlayer(mode: PlayerMode): IAlphaSynth | null {
+        const settings = this._api.settings;
+        const supportsAudioWorklets: boolean = window.isSecureContext && 'AudioWorkletNode' in window;
+        if (settings.player.outputMode !== PlayerOutputMode.WebAudioAudioWorklets || !supportsAudioWorklets) {
+            Logger.warning(
+                'Player',
+                'Mixing the synthesizer with media needs AudioWorklets (PlayerOutputMode.WebAudioAudioWorklets in a secure context); playing the media only'
+            );
+            return null;
+        }
+        // created first: when it fails no media player (and no <audio>) is left behind
+        const synth = this.createWorkerPlayer() as AlphaSynthWebWorkerApi | null;
+        if (!synth) {
+            Logger.warning('Player', 'The synthesizer could not be created; playing the media only');
+            return null;
+        }
+        const synthOutput = synth.output as AlphaSynthAudioWorkletOutput;
+        const context = synthOutput.audioContext!;
+        const graph = new WebAudioMixGraph(context);
+        // the worklet connects to destinationNode when it is built (the combined player does that on the worker's first
+        // readyForPlayback) and keepAlive decides whether a pause holds it: both are set before any warmUp() or play()
+        synthOutput.destinationNode = graph.synthInput;
+        synthOutput.keepAlive = true;
+        // before the first followMedia(true) or updateSyncPoints(): stamped chunks go to the worklet with their stamps
+        synth.mediaSampleOutput = synthOutput;
+        const offset = () => settings.player.mediaSyncOffsetInMilliseconds;
+
+        const parts = new MediaSynthPlayerParts();
+        parts.synth = synth;
+        parts.synthOutput = synthOutput;
+        parts.graph = graph;
+        parts.timer = new BrowserMediaTimer();
+        parts.hasSoundFont = !!settings.player.soundFont;
+        parts.probeLatencies = MediaLatencyProbe.cache;
+        // learned for the page session per media kind, like the probe's values: a recreated player keeps them
+        parts.learned =
+            mode === PlayerMode.EnabledExternalMedia
+                ? MediaSyncLearnedValues.externalMedia
+                : MediaSyncLearnedValues.backingTrack;
+        if (mode === PlayerMode.EnabledExternalMedia) {
+            // one clock, on the heard time of this player's graph: the combined player feeds and reads the same object
+            const clock = new ExternalMediaClock(graph, offset);
+            parts.media = new ExternalMediaPlayer(settings.player.bufferTimeInMilliseconds);
+            parts.clock = clock;
+            parts.externalClock = clock;
+        } else {
+            // one graph per <audio>: the element can be routed into an AudioContext once
+            const media = this.createBackingTrackPlayer() as BackingTrackPlayer;
+            const element = (media.output as AudioElementBackingTrackSynthOutput).audioElement;
+            graph.connectMediaElement(element);
+            parts.media = media;
+            parts.clock = new BackingTrackMediaClock(
+                new AudioElementClockSource(element, context),
+                MediaLatencyProbe.cache,
+                offset
+            );
+            parts.probe = new MediaLatencyProbe(context, () =>
+                BrowserUiFacade.createAlphaSynthAudioWorklet(context, settings)
+            );
+        }
+        return new MediaSynthPlayer(parts);
     }
 
     public throttle(action: () => void, delay: number): () => void {
