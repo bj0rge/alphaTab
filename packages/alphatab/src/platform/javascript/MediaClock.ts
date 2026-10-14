@@ -166,9 +166,15 @@ export class ExternalMediaClock implements IMediaClock {
     /** F-6: an update at most this old that shows the media moved since the pause: the media started itself. */
     public static readonly MovedWithinMs: number = 100;
     public static readonly MovedToleranceMs: number = 5;
-    /** The media stops up to one update after the pause: updates this soon after it show where it stopped. */
+    /**
+     * The media stops up to one update after the pause: updates this soon after it show where it stopped (unless
+     * alphaTab moves the paused media meanwhile: see {@link notePausedPosition}).
+     */
     public static readonly PauseSettleMs: number = 100;
-    /** After a seek, updates further than this from the target still show the old position. */
+    /**
+     * After a seek, updates further than this from the target still show the old position (a move of the paused media
+     * is told by its side instead while the media stays paused: see {@link notePausedPosition}).
+     */
     public static readonly JumpToleranceMs: number = 500;
     /** A seek the media hasn't shown after this long (one it didn't do) is given up: its updates count again. */
     public static readonly JumpWaitMaxS: number = 1;
@@ -190,6 +196,11 @@ export class ExternalMediaClock implements IMediaClock {
     private _positionAtPause: number = Number.NaN;
     private _pausedAt: number = Number.NEGATIVE_INFINITY;
     private _jumpTarget: number = Number.NaN;
+    /**
+     * A move of the paused media that the media has not shown yet: where the clock showed the media before it. NaN
+     * for a jump made while playing, and once the media plays.
+     */
+    private _jumpFrom: number = Number.NaN;
     private _jumpAt: number = 0;
 
     public constructor(source: IExternalClockSource, offsetMs: () => number) {
@@ -204,7 +215,7 @@ export class ExternalMediaClock implements IMediaClock {
         if (this.isFromBeforeJump(positionMs)) {
             return;
         }
-        this._jumpTarget = Number.NaN;
+        this._endJumpWait();
         const time = this._source.heardContextTime();
         if (
             !this._playing &&
@@ -251,6 +262,10 @@ export class ExternalMediaClock implements IMediaClock {
         this._playing = playing;
         this._sawMovement = false;
         if (playing) {
+            // a move of the paused media still waited for: the playing media moves from the target toward and past
+            // where it was, so the rest of the wait goes by the jump tolerance (with sparse updates the side of the
+            // move would drop its fresh updates)
+            this._jumpFrom = Number.NaN;
             // fit the playing media only: the updates from while it was paused would bend the line
             this._samples = this._samples.slice(-1);
             this._fit();
@@ -261,15 +276,28 @@ export class ExternalMediaClock implements IMediaClock {
     }
 
     /**
-     * alphaTab seeked the paused media: its new position is not a start, and the next start begins there even when
-     * the integration reports positions only while the media plays.
+     * alphaTab moved the paused media to `position`: its new position is not a start, and the next start begins there
+     * even when the integration reports positions only while the media plays. The media is paused there now, so the
+     * pause-settle window is over: no later update replaces the paused position.
+     *
+     * Until an update shows the move, the media shows where it stopped (at or after its last update) or the new
+     * position, and the move can be shorter than {@link JumpToleranceMs} (the API's move back to the beat's start on
+     * Pause): while it stays paused, an update at least as close to where the clock showed the media before the move
+     * as to `position` is from before the move. A move the media has not shown yet keeps that old position for the
+     * next one. Without an old position (no update yet) the jump tolerance applies.
      */
     public notePausedPosition(position: number): void {
+        const now = this._source.heardContextTime();
+        // an earlier move the media has not shown yet: the media may still show where it was before that one
+        const earlierMoveWaits = !Number.isNaN(this._jumpFrom) && now - this._jumpAt <= ExternalMediaClock.JumpWaitMaxS;
+        this._jumpFrom = earlierMoveWaits ? this._jumpFrom : this._lastPosition;
+        // (a jump the media never showed, paused right after a seek, is replaced by this move)
+        this._jumpTarget = position;
+        this._jumpAt = now;
         this._positionAtPause = position;
+        this._pausedAt = Number.NEGATIVE_INFINITY;
         this._lastPosition = position;
-        // a jump the media never showed (paused right after a seek) is replaced by this one; the samples from before
-        // the seek are from another position
-        this._jumpTarget = Number.NaN;
+        // the samples from before the move are from another position
         this.restartFit();
     }
 
@@ -282,17 +310,20 @@ export class ExternalMediaClock implements IMediaClock {
     }
 
     /**
-     * After a seek to `target`: ignore updates that still show the old position, then fit anew.
+     * After a seek to `target` while the media plays: ignore updates that still show the old position (further than
+     * {@link JumpToleranceMs} from the target), then fit anew.
      */
     public expectJumpTo(target: number): void {
         this._jumpTarget = target;
+        this._jumpFrom = Number.NaN;
         this._jumpAt = this._source.heardContextTime();
         this.restartFit();
     }
 
     /**
-     * Whether an update at `positionMs` still shows the position from before the seek that {@link expectJumpTo}
-     * waits for. After {@link JumpWaitMaxS} without the seek showing, the media's own position counts again.
+     * Whether an update at `positionMs` still shows the position from before the seek the clock waits for: a jump
+     * ({@link expectJumpTo}) or a move of the paused media ({@link notePausedPosition}). After {@link JumpWaitMaxS}
+     * without the seek showing, the media's own position counts again.
      */
     public isFromBeforeJump(positionMs: number): boolean {
         if (Number.isNaN(this._jumpTarget)) {
@@ -300,10 +331,19 @@ export class ExternalMediaClock implements IMediaClock {
         }
         if (this._source.heardContextTime() - this._jumpAt > ExternalMediaClock.JumpWaitMaxS) {
             // the media never showed the seek: take its position as it is
-            this._jumpTarget = Number.NaN;
+            this._endJumpWait();
             return false;
         }
+        if (!this._playing && !Number.isNaN(this._jumpFrom)) {
+            // the paused media shows where it was or the new position: the side of the move tells them apart
+            return Math.abs(positionMs - this._jumpFrom) <= Math.abs(positionMs - this._jumpTarget);
+        }
         return Math.abs(positionMs - this._jumpTarget) > ExternalMediaClock.JumpToleranceMs;
+    }
+
+    private _endJumpWait(): void {
+        this._jumpTarget = Number.NaN;
+        this._jumpFrom = Number.NaN;
     }
 
     /**

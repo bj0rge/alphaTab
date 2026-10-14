@@ -60,6 +60,20 @@ function playToTheRangeEnd(h: MediaSynthHarness, start: number, offset: number =
     return position;
 }
 
+/**
+ * What AlphaTabApiBase does on every Pause that isn't a stop: it moves the position back to the current beat's start,
+ * here `backMs` of song time, a shorter move than the clock's 500 ms jump tolerance (300 ms of song time is 150 ms of
+ * the media's around 5.3 s in this file). Register it while playing (the event replays the current state to a new
+ * handler).
+ */
+function snapBackOnPause(h: MediaSynthHarness, backMs: number): void {
+    h.player.stateChanged.on(e => {
+        if (e.state === PlayerState.Paused && !e.stopped) {
+            h.player.timePosition = h.player.timePosition - backMs;
+        }
+    });
+}
+
 describe('MediaSynthPlayerExternalTests', () => {
     it('a-seek-silences-the-synth-until-the-clock-has-a-fit-again', async () => {
         const h = await externalPlaying();
@@ -871,5 +885,69 @@ describe('MediaSynthPlayerExternalTests', () => {
         // the clock has a fit again after three updates over 100 ms
         expect(startedAfter).toBeGreaterThan(0);
         expect(startedAfter).toBeLessThanOrEqual(250);
+    });
+
+    it('the-pause-snap-keeps-the-next-play-counting-in', async () => {
+        // the video applies the snap's seek a moment late: an integration that reports while paused first sends where
+        // the video stopped (inside the clock's pause-settle window), then the snap; Play comes right after that
+        const h = await externalPlaying(); // the last update: 5300
+        snapBackOnPause(h, 300);
+        h.timer.advance(30);
+        h.player.pause();
+        const snap = h.handler!.seekTimes[h.handler!.seekTimes.length - 1];
+        h.timer.advance(20);
+        h.report(5330); // where the video stopped
+        h.timer.advance(200);
+        h.report(snap); // the video shows the snap
+        h.timer.advance(20);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(snap, 3);
+        expect(h.handler!.plays).toBe(1); // only the first Play started the video; this one waits for the hand-off
+    });
+
+    it('the-pause-snap-is-where-the-next-play-starts-the-synth', async () => {
+        // an integration that reports once when the video pauses (YouTube's PAUSED, spec §7): that report can still
+        // show where the video stopped, and nothing follows it. The video is at the snap, and plays from there
+        const h = await externalPlaying(); // the last update: 5300
+        snapBackOnPause(h, 300);
+        h.timer.advance(30);
+        h.player.pause();
+        const snap = h.handler!.seekTimes[h.handler!.seekTimes.length - 1];
+        h.timer.advance(20);
+        h.report(5330); // the PAUSED report: where the video stopped
+        expect(h.media.mediaTimeOfPosition).toBeCloseTo(snap, 3); // alphaTab stays at the snap
+        h.timer.advance(1000);
+        const resyncs = h.player.controller.stats.resyncTimes.length;
+        h.player.play(); // no count-in
+        const synthStart = h.synth.lastSeek();
+        expect(synthStart).toBeCloseTo(snap, 3);
+        const playedAt = h.timer.time;
+        for (let i = 1; i <= 10; i++) {
+            h.timer.advance(50);
+            h.report(snap + i * 50);
+            // the synth renders on from where it started
+            h.synthOutput.stamp(Math.round(h.graph.currentTime * 48000), synthStart + (h.timer.time - playedAt));
+        }
+        expect(h.player.controller.stats.resyncTimes.length).toBe(resyncs);
+        expect(h.player.controller.startLeads.get(1)).toBe(0); // the start's real lead, not the snap's distance
+    });
+
+    it('a-count-in-at-1x-seeks-the-media-to-alphatabs-position', async () => {
+        // the clock's position is not alphaTab's (here no update has come yet): the count-in start seeks the media to
+        // alphaTab's position, as a start without a count-in does
+        const h = new MediaSynthHarness(true);
+        await h.loadSong();
+        h.player.timePosition = 20000;
+        const target = h.media.mediaTimeOfPosition;
+        expect(h.externalClock!.position).not.toBeCloseTo(target, 3);
+        const seeks = h.handler!.seekTimes.length;
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(h.handler!.seekTimes.length).toBe(seeks + 1);
+        expect(h.handler!.seekTimes[seeks]).toBeCloseTo(target, 3);
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(target, 3);
     });
 });
