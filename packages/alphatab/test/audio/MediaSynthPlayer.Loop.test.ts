@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Logger } from '@coderline/alphatab/Logger';
 import { PlaybackRange } from '@coderline/alphatab/synth/PlaybackRange';
+import { PlayerState } from '@coderline/alphatab/synth/PlayerState';
 import { MediaSynthHarness } from 'test/audio/MediaSyncFakes';
 
 const StartTick = 7680;
@@ -271,5 +272,60 @@ describe('MediaSynthPlayerLoopTests', () => {
         run(h, end - start + 100);
         expect(h.finished).toBe(1);
         expect(h.states).toEqual(['Playing']);
+    });
+
+    it('a-finished-handler-that-stops-the-player-ends-the-wrap', async () => {
+        // a practice app that stops after N loops: its stop() wins over the wrap
+        const { h, start, end } = await looping();
+        h.player.finished.on(() => h.player.stop());
+        h.player.play();
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing', 'Stopped']);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.synth.state).toBe(PlayerState.Paused);
+        expect(h.synth.count('play:')).toBe(1);
+        expect(h.mediaOutput!.currentTime).toBeCloseTo(start, 3);
+        expect(h.timer.pending).toBe(0);
+    });
+
+    it('a-finished-handler-that-pauses-the-player-ends-the-wrap', async () => {
+        const { h, start, end } = await looping();
+        h.player.finished.on(() => h.player.pause());
+        h.player.play();
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.synth.state).toBe(PlayerState.Paused);
+        expect(h.synth.count('play:')).toBe(1);
+        // back at the range start, as the synthesizer alone seeks there after finished: the next Play starts a pass
+        expect(h.mediaOutput!.currentTime).toBeCloseTo(start, 3);
+        expect(h.timer.pending).toBe(0);
+    });
+
+    it('a-finished-handler-that-destroys-the-player-ends-the-wrap', async () => {
+        // Review Focus 5: nothing restarts in a destroyed player, and no timer is armed
+        const { h, start, end } = await looping();
+        h.player.finished.on(() => h.player.destroy());
+        h.player.play();
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        expect(h.mediaOutput!.isPlaying).toBe(false);
+        expect(h.synth.state).toBe(PlayerState.Paused);
+        expect(h.synth.count('play:')).toBe(1);
+        expect(h.timer.pending).toBe(0);
+    });
+
+    it('a-finished-handler-that-destroys-the-player-fires-no-stop-without-looping', async () => {
+        // the range end without looping stops both, as today; not in a player the handler destroyed
+        const { h, start, end } = await looping(1, false);
+        h.player.finished.on(() => h.player.destroy());
+        h.player.play();
+        run(h, end - start + 100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        expect(h.timer.pending).toBe(0);
     });
 });
