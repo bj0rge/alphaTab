@@ -173,7 +173,7 @@ export class ExternalMediaClock implements IMediaClock {
     public static readonly PauseSettleMs: number = 100;
     /**
      * After a seek, updates further than this from the target still show the old position (a move of the paused media
-     * is told by its side instead while the media stays paused: see {@link notePausedPosition}).
+     * is told by its side instead while the media is paused: see {@link notePausedPosition}).
      */
     public static readonly JumpToleranceMs: number = 500;
     /** A seek the media hasn't shown after this long (one it didn't do) is given up: its updates count again. */
