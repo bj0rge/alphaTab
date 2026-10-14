@@ -416,6 +416,13 @@ export class MediaSynthPlayer implements IAlphaSynth {
             // the media keeps playing alone
             this.controller.stopped();
             this._synth.pause();
+            if (this._countIn) {
+                // the count-in was the synthesizer's alone and the media waits, paused, at its pre-roll start: nothing
+                // else would start it. It plays alone now, and R-2 applies to this play() too
+                this._cancelCountIn();
+                this._playMedia();
+                this._watchMediaStart(MediaSyncConstants.MediaStartCheckMs);
+            }
         }
         this._checkReady();
         if (!wasReady) {
