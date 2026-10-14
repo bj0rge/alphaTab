@@ -83,6 +83,8 @@ export function buildSettings(options: ControlAppOptions, viewport: HTMLElement)
         },
         player: {
             playerMode: alphaTab.PlayerMode.EnabledAutomatic,
+            // ?mixing=1 plays the synthesizer along a file's backing track (CoderLine/alphaTab#2397)
+            enableSynthesizerWithMedia: params.get('mixing') === '1',
             scrollOffsetX: -10,
             scrollOffsetY: -20,
             soundFont: options.soundFont ?? Paths.soundFont,

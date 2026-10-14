@@ -4,6 +4,7 @@ import { Icons } from '../util/Icons';
 import { exportAudio, exportGp7 } from './AudioExporter';
 import { Dropdown, type DropdownItem } from './primitives/Dropdown';
 import { IconButton } from './primitives/IconButton';
+import { MediaMixer } from './MediaMixer';
 import { LoadingProgress } from './primitives/LoadingProgress';
 import { ToggleButton } from './primitives/ToggleButton';
 import type { TrackList } from './TrackList';
@@ -103,6 +104,7 @@ export class TransportBar implements Mountable {
     private metronome: ToggleButton;
     private countIn: ToggleButton;
     private loop: ToggleButton;
+    private mediaMixer: MediaMixer;
     private outputDevice: Dropdown<string>;
     private loadingProgress: LoadingProgress;
     private loadingSlot: HTMLElement;
@@ -133,6 +135,7 @@ export class TransportBar implements Mountable {
                     <div class="at-time-position">00:00 / 00:00</div>
                 </div>
                 <div class="at-transport-right">
+                    <div class="cmp-media-mixer"></div>
                     <div class="cmp-output-device at-transport-essential"></div>
                     <div class="cmp-count-in"></div>
                     <div class="cmp-metronome"></div>
@@ -189,6 +192,8 @@ export class TransportBar implements Mountable {
         this.loadingProgress = mount(this.loadingSlot, '.cmp-loading', new LoadingProgress());
 
         // --- right group ---
+        this.mediaMixer = mount(this.root, '.cmp-media-mixer', new MediaMixer(api));
+
         this.outputDevice = mount(
             this.root,
             '.cmp-output-device',
@@ -382,6 +387,7 @@ export class TransportBar implements Mountable {
             u();
         }
         this.subscriptions = [];
+        this.mediaMixer.dispose();
         this.root.remove();
     }
 }
