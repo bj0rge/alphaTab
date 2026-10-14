@@ -12,6 +12,7 @@ import type { Score } from '@coderline/alphatab/model/Score';
 import type { ExternalMediaClock, IMediaClock } from '@coderline/alphatab/platform/javascript/MediaClock';
 import { MediaLatencyProbe } from '@coderline/alphatab/platform/javascript/MediaLatencyProbe';
 import {
+    MediaSyncConstants,
     MediaSyncController,
     MediaSyncLearnedValues,
     type MediaStartPlan,
@@ -179,6 +180,36 @@ export class MediaSynthDiagnostics {
 }
 
 /**
+ * One count-in hand-off in flight.
+ * @target web
+ * @internal
+ */
+class CountInHandOff {
+    public readonly target: number;
+    /** The speed of the Play: the synthesizer measures the count-in's length at it. */
+    public readonly startSpeed: number;
+    public speed: number;
+    public preRoll: number;
+    /** The count-in's length at speed 1 (ms); 0 until the synthesizer reports it. */
+    public lengthAt1x: number = 0;
+    /** The context frame of the count-in's end; -1 until the worklet reports it. */
+    public endFrame: number = -1;
+    /** The context time (s) for the media's play(); -1 until the count-in end is known. */
+    public playAt: number = -1;
+    public handOffTimer: number = 0;
+    public limitTimer: number = 0;
+    /** The speed changed during the count-in: the hand-off doesn't learn the media-start latency. */
+    public speedChanged: boolean = false;
+
+    public constructor(target: number, speed: number, preRoll: number) {
+        this.target = target;
+        this.startSpeed = speed;
+        this.speed = speed;
+        this.preRoll = preRoll;
+    }
+}
+
+/**
  * One IAlphaSynth over a media player (the clock) and the worker synthesizer that follows it (spec §6.1).
  * It owns the transport state and the loop wrap; MediaSyncController keeps the two together.
  * @target web
@@ -222,6 +253,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _handshake: number = 0;
     private _holdBefore: number = -1;
     private _mediaDelayTimer: number = 0;
+    private _countIn: CountInHandOff | null = null;
+    private _mediaStartCheckTimer: number = 0;
 
     private _probeQueue: number[] = [];
     private _probing: boolean = false;
@@ -292,6 +325,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
         subscribe(synth.workerFailed.on(e => this._fallBackToMediaOnly(e.message)));
         subscribe(this._synthOutput.workletFailed.on(e => this._fallBackToMediaOnly(e.message)));
         subscribe(this._synthOutput.mediaTimestamp.on(e => this.controller.onStamp(e.frame, e.mediaTime)));
+        subscribe(this._synthOutput.countInEnd.on(frame => this._onCountInEnd(frame)));
+        subscribe(synth.countInStarted.on(lengthMs => this._onCountInStarted(lengthMs)));
         this._applyVolumes();
     }
 
@@ -522,7 +557,8 @@ export class MediaSynthPlayer implements IAlphaSynth {
             return false;
         }
         this._setState(PlayerState.Playing, false);
-        this._startPlayback();
+        // an app Play from Paused is the only start that counts in (§6.1)
+        this._startPlayback(true);
         return true;
     }
 
@@ -591,9 +627,12 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._clock.speed = speed;
         this._queueProbe(speed, true);
         this._probeNext();
-        if (this._state === PlayerState.Playing && this._isMixing) {
+        if (this._state === PlayerState.Playing && this._isMixing && !this._countIn) {
             // both at the new speed with its latency: re-sync and settle (§6.2; spike 11)
             this.controller.speedChanged(speed);
+        }
+        if (this._countIn) {
+            this._retimeCountIn(this._countIn, speed);
         }
     }
 
@@ -644,7 +683,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
     /**
      * Starts from the media's position (§6.2 start handshake).
      */
-    private _startPlayback(): void {
+    private _startPlayback(countIn: boolean): void {
         const speed = this.playbackSpeed;
         this._queueProbe(speed, true);
         this._probeNext();
@@ -653,7 +692,12 @@ export class MediaSynthPlayer implements IAlphaSynth {
             return;
         }
         this._sendFollowConfig();
-        this._runStart(this.controller.planStart(this._clock.position, speed, this._mediaLatency(speed)), true);
+        const target = this._clock.position;
+        if (countIn && this._countInVolume > 0) {
+            this._startCountIn(target, speed);
+            return;
+        }
+        this._runStart(this.controller.planStart(target, speed, this._mediaLatency(speed)), true);
     }
 
     private _runStart(plan: MediaStartPlan, learnStartLead: boolean): void {
@@ -686,7 +730,148 @@ export class MediaSynthPlayer implements IAlphaSynth {
                 this._playMedia();
             }
             this.controller.started(plan, learnStartLead);
+            // R-2: away from 1x (after the pre-roll seek) or after the media delay, the media's play() runs after the
+            // Play call returned; check that the media runs, as after a count-in
+            this._watchMediaStart(
+                plan.mediaDelayMs +
+                    this.controller.mediaStartLatencies.get(plan.speed) +
+                    MediaSyncConstants.MediaStartCheckMs
+            );
         });
+    }
+
+    private _startCountIn(target: number, speed: number): void {
+        // the media can't wait below its time 0: near it the pre-roll shrinks (the hand-off time uses this value)
+        const preRoll = Math.min(MediaSyncController.preRoll(speed, true), Math.max(0, target));
+        // the cursor stays at the start position meanwhile
+        this._holdBefore = this._media.timePosition;
+        this._synth.pause();
+        if (preRoll > 0) {
+            // the media waits, paused, at its pre-roll start
+            this._media.seekMediaTo(target - preRoll);
+        }
+        this._countIn = new CountInHandOff(target, speed, preRoll);
+        this._synth.seekToMediaTime(target);
+        this._synth.countInVolume = this._countInVolume;
+        this._synth.play();
+        // later starts in this playback (a seek, a wrap) never count in
+        this._synth.countInVolume = 0;
+    }
+
+    private _onCountInStarted(lengthMs: number): void {
+        const countIn = this._countIn;
+        if (!countIn || countIn.limitTimer !== 0) {
+            return;
+        }
+        countIn.lengthAt1x = lengthMs * countIn.startSpeed;
+        countIn.limitTimer = this._timer.setTimeout(
+            () => this._onCountInTimeLimit(countIn),
+            // (a speed change can come before this message)
+            Math.max(lengthMs, countIn.lengthAt1x / countIn.speed) + MediaSyncConstants.CountInTimeLimitExtraMs
+        );
+    }
+
+    private _onCountInEnd(frame: number): void {
+        const countIn = this._countIn;
+        if (!countIn) {
+            return;
+        }
+        countIn.endFrame = frame;
+        // the end came: the time limit is only for an end that never comes (§6.2); the hand-off timer below runs
+        // even when the audio started late
+        this._timer.clearTimeout(countIn.limitTimer);
+        countIn.limitTimer = 0;
+        countIn.playAt = this.controller.handOffPlayTime(frame, this._graph.sampleRate, countIn.speed, countIn.preRoll);
+        // every report plans the hand-off again: the first comes about a bar ahead, and a speed change or an
+        // underrun moves the end after it
+        this._timer.clearTimeout(countIn.handOffTimer);
+        const waitMs = (countIn.playAt - this._graph.currentTime) * 1000 - MediaSyncConstants.HandOffEarlyMs;
+        countIn.handOffTimer = this._timer.setTimeout(() => this._handOff(countIn), Math.max(0, waitMs));
+    }
+
+    private _handOff(countIn: CountInHandOff): void {
+        if (this._countIn !== countIn) {
+            return;
+        }
+        // the last ms on the audio clock (G-5; spike 6: play() 0.2–4.8 ms after its time)
+        this._timer.spinUntil(() => this._graph.currentTime >= countIn.playAt, MediaSyncConstants.HandOffSpinMaxMs);
+        this._countIn = null;
+        this._timer.clearTimeout(countIn.limitTimer);
+        this.diagnostics.countIns.push(
+            new MediaSynthCountInRecord(countIn.speed, (this._graph.currentTime - countIn.playAt) * 1000)
+        );
+        this._playMedia();
+        // a speed change during the count-in: nothing to learn from this start
+        this.controller.startedAfterHandOff(countIn.speed, !countIn.speedChanged);
+        this._watchMediaStart(
+            this.controller.mediaStartLatencies.get(countIn.speed) + MediaSyncConstants.MediaStartCheckMs
+        );
+    }
+
+    private _onCountInTimeLimit(countIn: CountInHandOff): void {
+        if (this._countIn !== countIn) {
+            return;
+        }
+        // the hand-off never came: start the media anyway and play it alone (§6.2)
+        this._countIn = null;
+        this._timer.clearTimeout(countIn.handOffTimer);
+        this._fallBackToMediaOnly('the count-in hand-off never came');
+        this._playMedia();
+    }
+
+    /**
+     * A speed change during the count-in (Review Focus 2): the media waits at the new speed's pre-roll start, the
+     * time limit allows for slower clicks, and a known count-in end gets the media's play() planned again.
+     */
+    private _retimeCountIn(countIn: CountInHandOff, speed: number): void {
+        const slower = speed < countIn.speed;
+        countIn.speed = speed;
+        // as at the start, the media can't wait below its time 0
+        countIn.preRoll = Math.min(MediaSyncController.preRoll(speed, true), Math.max(0, countIn.target));
+        countIn.speedChanged = true;
+        this._media.seekMediaTo(countIn.target - countIn.preRoll);
+        if (slower && countIn.limitTimer !== 0) {
+            // at most the whole bar at the new speed is still to come
+            this._timer.clearTimeout(countIn.limitTimer);
+            countIn.limitTimer = this._timer.setTimeout(
+                () => this._onCountInTimeLimit(countIn),
+                countIn.lengthAt1x / speed + MediaSyncConstants.CountInTimeLimitExtraMs
+            );
+        }
+        if (countIn.endFrame >= 0) {
+            this._timer.clearTimeout(countIn.handOffTimer);
+            countIn.handOffTimer = 0;
+            this._onCountInEnd(countIn.endFrame);
+        }
+    }
+
+    private _cancelCountIn(): void {
+        const countIn = this._countIn;
+        if (countIn) {
+            this._timer.clearTimeout(countIn.handOffTimer);
+            this._timer.clearTimeout(countIn.limitTimer);
+            this._countIn = null;
+        }
+    }
+
+    /**
+     * After a delayed media start: check that the media runs.
+     */
+    private _watchMediaStart(delayMs: number): void {
+        this._timer.clearTimeout(this._mediaStartCheckTimer);
+        this._mediaStartCheckTimer = this._timer.setTimeout(() => {
+            this._mediaStartCheckTimer = 0;
+            if (
+                this._state !== PlayerState.Playing ||
+                !Number.isNaN(this._clock.mediaTimeNow()) ||
+                this._clock.isSeeking
+            ) {
+                return;
+            }
+            // R-2: the browser refused the media's play(); decision D-7 picks the real fallback
+            Logger.warning('Player', 'The media did not start; pausing (the browser may have refused its play())');
+            this.pause();
+        }, delayMs);
     }
 
     private _seek(apply: () => void): void {
@@ -697,7 +882,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
         // pause both, seek, restart through the start handshake: no count-in, no stateChanged (§6.2)
         this._interrupt();
         apply();
-        this._startPlayback();
+        this._startPlayback(false);
     }
 
     /**
@@ -707,6 +892,9 @@ export class MediaSynthPlayer implements IAlphaSynth {
         this._handshake++;
         this._timer.clearTimeout(this._mediaDelayTimer);
         this._mediaDelayTimer = 0;
+        this._timer.clearTimeout(this._mediaStartCheckTimer);
+        this._mediaStartCheckTimer = 0;
+        this._cancelCountIn();
         this._holdBefore = -1;
         this.controller.stopped();
         this._pauseMedia();
