@@ -122,6 +122,7 @@ describe('MediaSynthPlayerCountInTests', () => {
     });
 
     it('the-time-limit-starts-the-media-alone', async () => {
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
         const h = await countingIn();
         h.synth.startCountIn(2000);
         h.timer.advance(2249);
@@ -134,6 +135,7 @@ describe('MediaSynthPlayerCountInTests', () => {
         const plays = h.synth.count('play:');
         h.player.play();
         expect(h.synth.count('play:')).toBe(plays);
+        warning.mockRestore();
     });
 
     it('pause-during-the-count-in-cancels-the-hand-off', async () => {
@@ -226,6 +228,7 @@ describe('MediaSynthPlayerCountInTests', () => {
 
     it('a-media-start-that-never-happens-pauses-both', async () => {
         // R-2 safety net
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
         const h = await countingIn();
         h.synth.startCountIn(2000);
         h.synthOutput.endCountIn(1.5 * 48000);
@@ -234,6 +237,7 @@ describe('MediaSynthPlayerCountInTests', () => {
         h.mediaOutput!.isPlaying = false; // the browser refused the delayed play()
         h.timer.advance(600);
         expect(h.states).toEqual(['Playing', 'Paused']);
+        warning.mockRestore();
     });
 
     it('a-refused-media-start-away-from-1x-pauses-both', async () => {
@@ -242,7 +246,7 @@ describe('MediaSynthPlayerCountInTests', () => {
         await h.loadSong();
         h.player.playbackSpeed = 0.75;
         h.mediaOutput!.currentTime = 5000;
-        const warning = vi.spyOn(Logger, 'warning');
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
         h.backingClock!.isSeeking = true; // the pre-roll seek ends with 'seeked' a moment later
         h.player.play();
         expect(h.mediaOutput!.isPlaying).toBe(false);
@@ -342,5 +346,51 @@ describe('MediaSynthPlayerCountInTests', () => {
         h.positions.length = 0;
         h.player.playbackSpeed = 0.5;
         expect(h.positions.filter(p => p < start - 1)).toEqual([]);
+    });
+
+    it('a-synth-failure-before-the-count-in-starts-plays-the-media-alone-from-its-pre-roll-start', async () => {
+        // the count-in is the synthesizer's alone: the media waits, paused, at its pre-roll start, and nothing else
+        // would ever start it. It plays alone now, as the media-only start would
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = await countingIn(0.5);
+        const preRollStart = h.mediaOutput!.currentTime;
+        expect(preRollStart).toBeCloseTo(5000 - 120, 3);
+        h.synth.fail('alphaTab.worker.mjs: 404'); // before the worker reported the count-in
+        expect(h.states).toEqual(['Playing']);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        expect(h.mediaOutput!.currentTime).toBe(preRollStart);
+        expect(h.player.controller.isActive).toBe(false);
+        expect(h.player.diagnostics.countIns.length).toBe(0);
+        // R-2: the media's play() runs after the gesture here too
+        h.mediaOutput!.isPlaying = false; // the browser refused the play()
+        h.timer.advance(600);
+        expect(h.states).toEqual(['Playing', 'Paused']);
+        expect(warning.mock.calls.some(c => String(c[1]).startsWith('The media did not start'))).toBe(true);
+        warning.mockRestore();
+    });
+
+    it('a-synth-failure-after-the-count-in-end-was-reported-plays-the-media-alone-and-hands-nothing-off', async () => {
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = await countingIn();
+        h.synth.startCountIn(2000);
+        h.synthOutput.endCountIn(1.5 * 48000);
+        h.synthOutput.fail('Audio Worklet operation failed');
+        expect(h.mediaOutput!.isPlaying).toBe(true); // at once, not at the hand-off time
+        h.timer.advance(3000); // past where the hand-off would have been
+        expect(h.states).toEqual(['Playing']);
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        expect(h.player.controller.isActive).toBe(false);
+        expect(h.player.diagnostics.countIns.length).toBe(0);
+        expect(h.timer.pending).toBe(0);
+        warning.mockRestore();
+    });
+
+    it('a-synth-failure-after-the-count-in-started-does-not-wait-for-the-time-limit', async () => {
+        const warning = vi.spyOn(Logger, 'warning').mockImplementation(() => {});
+        const h = await countingIn();
+        h.synth.startCountIn(2000);
+        h.synth.fail('alphaTab.worker.mjs: 404');
+        expect(h.mediaOutput!.isPlaying).toBe(true);
+        warning.mockRestore();
     });
 });
