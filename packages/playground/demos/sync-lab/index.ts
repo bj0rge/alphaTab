@@ -14,7 +14,10 @@ import { MidiFile } from '@coderline/alphatab/midi/MidiFile';
 import { MidiFileGenerator } from '@coderline/alphatab/midi/MidiFileGenerator';
 import { BrowserUiFacade } from '@coderline/alphatab/platform/javascript/BrowserUiFacade';
 import { MediaLatencyProbe } from '@coderline/alphatab/platform/javascript/MediaLatencyProbe';
-import { MediaSyncConstants } from '@coderline/alphatab/platform/javascript/MediaSyncController';
+import {
+    MediaSyncConstants,
+    MediaSyncLearnedValues
+} from '@coderline/alphatab/platform/javascript/MediaSyncController';
 import type { MediaSynthPlayer } from '@coderline/alphatab/platform/javascript/MediaSynthPlayer';
 import type { IAudioSampleSynthesizer } from '@coderline/alphatab/synth/IAudioSampleSynthesizer';
 import { MidiFileSequencer } from '@coderline/alphatab/synth/MidiFileSequencer';
@@ -40,9 +43,15 @@ function log(...args: unknown[]) {
     console.log('[sync-lab]', line);
 }
 function record(name: string, value: unknown) {
-    results.push({ name, value, at: new Date().toISOString() });
+    // a copy (as the log prints it): a test returns its rows to the caller, who may change them
+    results.push({ name, value: JSON.parse(JSON.stringify(value)), at: new Date().toISOString() });
     log({ [name]: value });
 }
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+// a run on a device without a console (the iPad) shows its failures on the page too
+window.addEventListener('unhandledrejection', e => log(`error [sync-lab] unhandled rejection: ${errorText(e.reason)}`));
+window.addEventListener('error', e => log(`error [sync-lab] ${e.message} (${e.filename}:${e.lineno})`));
 
 // D-7, D-8: the player's warnings on the page too ("The media did not start", "playing the media
 // only"): on the iPad the lab runs inside the Web MIDI Browser app, which may have no console
@@ -80,14 +89,20 @@ BrowserUiFacade.createAlphaSynthWebWorker = s => {
     return createSynthWorker(s);
 };
 const NativeWorkletNode = window.AudioWorkletNode;
-(window as unknown as { AudioWorkletNode: typeof AudioWorkletNode }).AudioWorkletNode = class extends NativeWorkletNode {
-    public constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
-        super(context, name, options);
-        if (name === 'alphatab') {
-            created.synthWorklets++;
+// outside a secure context (plain http on a LAN address) there is no AudioWorkletNode: the page still loads, and the
+// player says it plays the media only
+if (NativeWorkletNode) {
+    (window as unknown as { AudioWorkletNode: typeof AudioWorkletNode }).AudioWorkletNode = class extends (
+        NativeWorkletNode
+    ) {
+        public constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
+            super(context, name, options);
+            if (name === 'alphatab') {
+                created.synthWorklets++;
+            }
         }
-    }
-};
+    };
+}
 
 class SilentSynth implements IAudioSampleSynthesizer {
     public masterVolume = 0;
@@ -148,7 +163,33 @@ function encodeWav(pcm: Int16Array, sampleRate: number): Uint8Array {
 
 async function mediaDuration(bytes: Uint8Array): Promise<number> {
     const el = new Audio(URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>])));
-    await new Promise(r => el.addEventListener('loadedmetadata', r, { once: true }));
+    await new Promise<void>((resolve, reject) => {
+        // WebKit may not load a hidden <audio> before a tap: without a limit the page would stay at "loading…"
+        const timer = setTimeout(
+            () => reject(new Error('the browser did not report the audio length within 15 s')),
+            15000
+        );
+        el.addEventListener(
+            'loadedmetadata',
+            () => {
+                clearTimeout(timer);
+                resolve();
+            },
+            { once: true }
+        );
+        el.addEventListener(
+            'error',
+            () => {
+                clearTimeout(timer);
+                reject(
+                    new Error(
+                        `the browser could not read the audio (${el.error?.message || `media error ${el.error?.code}`})`
+                    )
+                );
+            },
+            { once: true }
+        );
+    });
     return el.duration * 1000;
 }
 
@@ -181,7 +222,12 @@ async function prepareScore(bytes: Uint8Array, name: string): Promise<alphaTab.m
         log(`${name}: no embedded audio track. The lab needs a Guitar Pro file with an audio track and sync points.`);
         return null;
     }
-    durationMs = await mediaDuration(audio);
+    try {
+        durationMs = await mediaDuration(audio);
+    } catch (e) {
+        log(`${name}: ${errorText(e)}`);
+        return null;
+    }
     const midi = new MidiFile();
     const generator = new MidiFileGenerator(score, settings, new AlphaSynthMidiFileHandler(midi));
     generator.generate();
@@ -296,8 +342,27 @@ registerProcessor('lab-tap', LabTap);`;
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+/**
+ * Polls `done` until it holds. Past `timeoutMs` it logs what it waited for and rejects, so a run on a device without a
+ * console ends with a message instead of waiting for ever.
+ */
+async function waitUntil(what: string | (() => string), done: () => boolean, timeoutMs: number, pollMs = 100) {
+    const until = performance.now() + timeoutMs;
+    while (!done()) {
+        if (performance.now() > until) {
+            const message = `gave up waiting for ${typeof what === 'function' ? what() : what} after ${Math.round(timeoutMs / 1000)} s`;
+            log(`error [sync-lab] ${message}`);
+            throw new Error(message);
+        }
+        await sleep(pollMs);
+    }
+}
+
 async function setupTaps() {
+    // ctx() throws when the player is the media alone (no AudioWorklet): tapsReady then stays false, so nothing that reads
+    // the lab (the live readout every 400 ms, the tapped-start report) runs or throws into the log
     const context = ctx();
+    tapsReady = true;
     await context.audioWorklet.addModule(URL.createObjectURL(new Blob([tapCode], { type: 'application/javascript' })));
     const makeTap = (kind: 'media' | 'synth', threshold: number) => {
         const node = new AudioWorkletNode(context, 'lab-tap', { processorOptions: { threshold } });
@@ -315,9 +380,7 @@ async function setupTaps() {
     const tapSynth = makeTap('synth', 0.02);
     lab().mediaSourceNode!.connect(tapMedia);
     // the worklet is built when the player is ready (warm start)
-    while (!lab().synthNode) {
-        await sleep(50);
-    }
+    await waitUntil('the synthesizer worklet', () => !!lab().synthNode, 30000, 50);
     lab().synthNode!.connect(tapSynth);
     applySound();
 }
@@ -357,9 +420,26 @@ function nearest(sorted: number[], x: number): number {
     return best;
 }
 
-const r1 = (x: number | undefined | null) => (x === undefined || x === null || Number.isNaN(x) ? null : Math.round(x * 10) / 10);
+const r1 = (x: number | undefined | null) =>
+    x === undefined || x === null || Number.isNaN(x) ? null : Math.round(x * 10) / 10;
 
-function analyze(name: string, fromFrame: number, toFrame: number, fromPerf: number, toPerf: number, settleMs: number): SegmentStats {
+/**
+ * "clicks/beeps" for lists read at `readFrame`, leaving out the last 100 ms of both: a beep and its click can fall
+ * either side of the moment the lists are read, which would count as a missing click.
+ */
+function countsBefore(readFrame: number, clicks: number[], beeps: number[]): string {
+    const cut = readFrame - 0.1 * ctx().sampleRate;
+    return `${clicks.filter(f => f < cut).length}/${beeps.filter(f => f < cut).length}`;
+}
+
+function analyze(
+    name: string,
+    fromFrame: number,
+    toFrame: number,
+    fromPerf: number,
+    toPerf: number,
+    settleMs: number
+): SegmentStats {
     const sr = ctx().sampleRate;
     const media = tapOnsets.media.filter(f => f >= fromFrame - sr && f <= toFrame + sr).sort((a, b) => a - b);
     const synth = tapOnsets.synth.filter(f => f >= fromFrame && f <= toFrame);
@@ -444,9 +524,12 @@ function restore() {
 }
 
 async function waitForProbe(speeds: number[]) {
-    while (speeds.some(s => lab().probeLatencies[String(s)] === undefined)) {
-        await sleep(100);
-    }
+    const missing = () => speeds.filter(s => lab().probeLatencies[String(s)] === undefined);
+    await waitUntil(
+        () => `the media latency at ${missing().join(', ')}x`,
+        () => missing().length === 0,
+        60000
+    );
 }
 
 async function segment(name: string, action: () => void, durationMs: number, settleMs = 1500): Promise<SegmentStats> {
@@ -460,7 +543,8 @@ async function segment(name: string, action: () => void, durationMs: number, set
 }
 
 /**
- * S1-S3: steady playback, a seek at 1x, a seek with 0.5x, with 0.75x and with 1.5x.
+ * S1-S3: steady playback, a seek at 1x, a seek with 0.5x, with 0.75x, with 1.25x and with 1.5x. The 1.5x segment comes
+ * last: it runs to the end of the default file, and the player stops there.
  */
 async function runMeasurement() {
     if (src !== 'beeps') {
@@ -469,12 +553,14 @@ async function runMeasurement() {
     }
     api.stop();
     measuringSetup(1);
-    await waitForProbe([1, 0.5, 0.75, 1.5]);
+    await waitForProbe([1, 0.5, 0.75, 1.25, 1.5]);
     tapOnsets.media.length = 0;
     tapOnsets.synth.length = 0;
     const segments: SegmentStats[] = [];
     segments.push(await segment('start@0s 1.0x', () => api.play(), 25000));
-    segments.push(await segment('seek 1.0x', () => (api.timePosition = alphaTabTimeForMedia(durationMs * 0.45)), 15000));
+    segments.push(
+        await segment('seek 1.0x', () => (api.timePosition = alphaTabTimeForMedia(durationMs * 0.45)), 15000)
+    );
     segments.push(
         await segment(
             'seek + 0.5x',
@@ -491,6 +577,18 @@ async function runMeasurement() {
             () => {
                 api.playbackSpeed = 0.75;
                 api.timePosition = alphaTabTimeForMedia(durationMs * 0.2);
+            },
+            15000
+        )
+    );
+    segments.push(
+        await segment(
+            'seek + 1.25x',
+            () => {
+                api.playbackSpeed = 1.25;
+                // 15 s at 1.25x are 18.75 s of media: from 10% they end before the 1.5x segment's 75%, which stays a
+                // forward seek, as it was
+                api.timePosition = alphaTabTimeForMedia(durationMs * 0.1);
             },
             15000
         )
@@ -520,7 +618,8 @@ async function runMeasurement() {
 
 /**
  * S4, S5: n plays from different beats, `beforeBeatMs` before the beat; checks the first clicks, the skip
- * (the first beep after Play must have its own click) and the lock time.
+ * (the first beep after Play must have its own click) and the lock time. Each row's `playAtMs` is the
+ * performance.now() of its Play.
  */
 async function startTest(n: number, beforeBeatMs: number, speed = 1) {
     const sr = ctx().sampleRate;
@@ -535,6 +634,7 @@ async function startTest(n: number, beforeBeatMs: number, speed = 1) {
         skipped: boolean;
         withinTolerance: boolean;
         counts: string;
+        playAtMs: number;
     }[] = [];
     for (let i = 0; i < n; i++) {
         api.pause();
@@ -550,6 +650,7 @@ async function startTest(n: number, beforeBeatMs: number, speed = 1) {
         const playT = performance.now();
         api.play();
         await sleep(speed < 1 ? 4500 : 2500);
+        const readFrame = ctx().currentTime * sr;
         const resyncs = lab().stats.resyncTimes.filter(t => t > playT).length;
         const media = [...tapOnsets.media].sort((a, b) => a - b);
         const synthAfter = tapOnsets.synth.filter(f => f > playFrame);
@@ -573,7 +674,8 @@ async function startTest(n: number, beforeBeatMs: number, speed = 1) {
             firstGap,
             skipped,
             withinTolerance: !skipped && Math.abs(firstGap!) <= tolerance,
-            counts: `${synthAfter.length}/${mediaAfter.length}`
+            counts: countsBefore(readFrame, synthAfter, mediaAfter),
+            playAtMs: playT
         });
     }
     restore();
@@ -584,9 +686,22 @@ async function startTest(n: number, beforeBeatMs: number, speed = 1) {
 /**
  * S4b: n seeks or speed changes during playback, each `beforeBeatMs` before a beat; checks the first click after
  * each one (the first beep after it must have its own click) against S4's tolerance. 'seek' jumps 12 beats on;
- * 'speed' changes from `fromSpeed` to `speed` in place, timed from the media's currentTime (a few ms off).
+ * 'speed' changes from `fromSpeed` to `speed` in place, timed from the media's currentTime (a few ms off); it needs a
+ * `fromSpeed` other than `speed`.
  */
-async function midPlaybackTest(n: number, beforeBeatMs: number, action: 'seek' | 'speed', speed = 1, fromSpeed = speed) {
+async function midPlaybackTest(
+    n: number,
+    beforeBeatMs: number,
+    action: 'seek' | 'speed',
+    speed = 1,
+    fromSpeed = speed
+) {
+    if (action === 'speed' && fromSpeed === speed) {
+        // the player ignores the speed it already has: the run would change nothing and measure nothing
+        throw new Error(
+            `a speed-change test needs a fromSpeed other than ${speed}: setting the same speed changes nothing`
+        );
+    }
     const sr = ctx().sampleRate;
     const element = (api.player!.output as unknown as { audioElement: HTMLAudioElement }).audioElement;
     const mediaNow = () => element.currentTime * 1000;
@@ -597,7 +712,9 @@ async function midPlaybackTest(n: number, beforeBeatMs: number, action: 'seek' |
         measuringSetup(fromSpeed);
         await sleep(400);
         // a different place each time, with enough beats left after the action (the default file has 64 beats)
-        api.timePosition = alphaTabTimeForMedia(beatMediaTimes[4 + ((i * 23) % Math.max(1, beatMediaTimes.length - 40))]);
+        api.timePosition = alphaTabTimeForMedia(
+            beatMediaTimes[4 + ((i * 23) % Math.max(1, beatMediaTimes.length - 40))]
+        );
         await sleep(300);
         api.play();
         await sleep(fromSpeed < 1 ? 4500 : 2500); // settled before the action
@@ -619,6 +736,7 @@ async function midPlaybackTest(n: number, beforeBeatMs: number, action: 'seek' |
             api.playbackSpeed = speed;
         }
         await sleep(speed < 1 ? 4500 : 2500);
+        const readFrame = ctx().currentTime * sr;
         const media = [...tapOnsets.media].sort((a, b) => a - b);
         const synth = [...tapOnsets.synth].sort((a, b) => a - b);
         const mediaAfter = media.filter(f => f > actionFrame);
@@ -635,7 +753,7 @@ async function midPlaybackTest(n: number, beforeBeatMs: number, action: 'seek' |
             withinTolerance: !skipped && Math.abs(firstGap!) <= tolerance,
             after: synthAfter.slice(1, 5).map(f => r1(((f - nearest(media, f)) / sr) * 1000)!),
             resyncs: lab().stats.resyncTimes.filter(t => t > actionT).length,
-            counts: `${synthAfter.length}/${mediaAfter.length}`
+            counts: countsBefore(readFrame, synthAfter, mediaAfter)
         });
     }
     restore();
@@ -741,24 +859,37 @@ async function countInTest(n: number, speed = 1) {
 }
 
 /**
- * D-3 (F-14): the count-in's media pre-roll below 1x, 60 ms against 120 ms, with the real count-in.
+ * D-3 (F-14): the count-in's media pre-roll below 1x, 60 ms against 120 ms, with the real count-in. The arms run ABBA
+ * (60, 120, 120, 60) with `n` Plays each, and every arm starts with the speed's media-start latency unlearned, so
+ * neither inherits what the other learned; the rows are reported per arm, in run order.
  */
 async function countInPreRollTest(speed = 0.5, n = 6) {
     const constants = MediaSyncConstants as unknown as { CountInPreRollBelow1xMs: number };
     const original = constants.CountInPreRollBelow1xMs;
-    const byPreRoll: Record<string, object[]> = {};
-    for (const preRoll of [60, 120]) {
-        constants.CountInPreRollBelow1xMs = preRoll;
-        byPreRoll[String(preRoll)] = await countInTest(n, speed);
+    // the lab always plays a backing track
+    const learned = MediaSyncLearnedValues.backingTrack;
+    const preRolls = [60, 120, 120, 60];
+    const arms: { order: number; preRollMs: number; rows: object[] }[] = [];
+    try {
+        for (let i = 0; i < preRolls.length; i++) {
+            constants.CountInPreRollBelow1xMs = preRolls[i];
+            learned.mediaStartLatencies.delete(speed);
+            learned.lastMediaStartLatencies.delete(speed);
+            arms.push({ order: i + 1, preRollMs: preRolls[i], rows: await countInTest(n, speed) });
+        }
+    } finally {
+        constants.CountInPreRollBelow1xMs = original;
     }
-    constants.CountInPreRollBelow1xMs = original;
-    record('countInPreRollTest', { speed, byPreRoll });
-    return byPreRoll;
+    record('countInPreRollTest', { speed, arms });
+    return arms;
 }
 
 /**
  * S10: loops `bars` bars from beat 40 for `wraps` repetitions; every beep must have its own click, and each
- * repetition's first beat is checked against S4b's tolerance.
+ * repetition's first beat is checked against S4b's tolerance. The wrap gap is measured at the wraps only: from the
+ * last beep before a wrap to the first beep after it, less that pair's nominal spacing (the range's last beat to the
+ * range end, where the next repetition's first beat takes the place of the beat after the range).
+ * `medianWrapGapMs` is the median over every wrap; `gaps` lists the wrap gaps above 15 ms.
  */
 async function loopTest(speed: number, bars = 2, wraps = 10, beatsPerBar = 4) {
     const sr = ctx().sampleRate;
@@ -768,7 +899,9 @@ async function loopTest(speed: number, bars = 2, wraps = 10, beatsPerBar = 4) {
     const k0 = 40;
     const startMedia = beatMediaTimes[k0];
     const endMedia = beatMediaTimes[k0 + bars * beatsPerBar];
-    const beatMs = (beatMediaTimes[k0 + 1] - beatMediaTimes[k0]) / speed;
+    // what a pass without a wrap would space the range's last beep and the one after it by
+    const lastBeat = k0 + bars * beatsPerBar - 1;
+    const nominalWrapMs = (beatMediaTimes[lastBeat + 1] - beatMediaTimes[lastBeat]) / speed;
     api.timePosition = alphaTabTimeForMedia(endMedia);
     await sleep(150);
     const endTick = api.tickPosition;
@@ -806,16 +939,21 @@ async function loopTest(speed: number, bars = 2, wraps = 10, beatsPerBar = 4) {
             missing++;
         }
     }
-    const extra = synth.filter(s => Math.abs(((s - nearest(media, s)) / sr) * 1000) > 50).length;
-    const gaps: number[] = [];
-    for (let i = 1; i < media.length; i++) {
-        const d = ((media[i] - media[i - 1]) / sr) * 1000;
-        if (d > beatMs + 15) {
-            gaps.push(Math.round(d - beatMs));
+    const extra =
+        media.length === 0
+            ? synth.length
+            : synth.filter(s => Math.abs(((s - nearest(media, s)) / sr) * 1000) > 50).length;
+    // a wrap whose next repetition was not heard before the run ended has no beep after it: it is left out
+    const wrapGaps: number[] = [];
+    for (const w of wrapFrames) {
+        const before = media.filter(f => f < w);
+        const after = media.find(f => f > w);
+        if (before.length > 0 && after !== undefined) {
+            wrapGaps.push(((after - before[before.length - 1]) / sr) * 1000 - nominalWrapMs);
         }
     }
     const abs = offsets.map(Math.abs).sort((a, b) => a - b);
-    const sortedGaps = [...gaps].sort((a, b) => a - b);
+    const sortedWrapGaps = [...wrapGaps].sort((a, b) => a - b);
     // each repetition's first beat: the first beep after each of the first `wraps` wraps (as autoBpmLoopTest);
     // a later wrap comes too close to the run's end for its first beat to be heard
     const firstBeats = wrapFrames.slice(0, wraps).map(w => {
@@ -832,9 +970,10 @@ async function loopTest(speed: number, bars = 2, wraps = 10, beatsPerBar = 4) {
         meanMs: r1(offsets.reduce((a, b) => a + b, 0) / Math.max(1, offsets.length)),
         p95Ms: r1(abs[Math.min(abs.length - 1, Math.floor(abs.length * 0.95))]),
         wraps: wrapCount,
-        gaps,
-        medianGapMs: sortedGaps.length ? sortedGaps[Math.floor(sortedGaps.length / 2)] : null,
-        beatMs: Math.round(beatMs),
+        nominalWrapMs: r1(nominalWrapMs),
+        wrapGapsN: wrapGaps.length,
+        medianWrapGapMs: r1(sortedWrapGaps[Math.floor(sortedWrapGaps.length / 2)]),
+        gaps: wrapGaps.filter(g => g > 15).map(g => Math.round(g)),
         firstBeatsMs: firstBeats,
         toleranceMs: r1(tolerance),
         firstBeatsWithinTolerance:
@@ -849,6 +988,8 @@ async function loopTest(speed: number, bars = 2, wraps = 10, beatsPerBar = 4) {
  * F-9d: a held tempo sweep (notation-hero's tempo button, one step per `stepMs`). With `settleOnly` a speed change
  * settles instead of re-syncing, and each step's row says how far the media player's own seek moved the recording
  * back (`seekBackMs`) and how far behind the synth the media then was (`firstDriftMs`) (decision gate D-9).
+ * From 1.5 s after the last step the clicks must be back within S4b's tolerance: `settledOk` judges the clicks of that
+ * window (the run reads on until three beats are in it) and is null when fewer than two were heard.
  */
 async function sweepTest(fromSpeed: number, steps: number, stepSpeed: number, stepMs = 250, settleOnly = false) {
     const sr = ctx().sampleRate;
@@ -862,15 +1003,6 @@ async function sweepTest(fromSpeed: number, steps: number, stepSpeed: number, st
     const element = (api.player!.output as unknown as { audioElement: HTMLAudioElement }).audioElement;
     const controller = mediaSynth().controller;
     const speedChanged = controller.speedChanged.bind(controller);
-    if (settleOnly) {
-        // spike 11's settle rule: no forced re-sync; the drift rules still re-sync above the threshold
-        controller.speedChanged = (s: number) => {
-            const resync = controller.resync;
-            controller.resync = () => {};
-            speedChanged(s);
-            controller.resync = resync;
-        };
-    }
     lab().enableDriftLog(true);
     const stepRows: { seekBackMs: number; firstDriftMs: number | null }[] = [];
     tapOnsets.media.length = 0;
@@ -878,27 +1010,50 @@ async function sweepTest(fromSpeed: number, steps: number, stepSpeed: number, st
     const f0 = ctx().currentTime * sr;
     const t0 = performance.now();
     let speed = fromSpeed;
-    for (let i = 0; i < steps; i++) {
-        speed = Math.round((speed + stepSpeed) * 10000) / 10000;
-        const before = element.currentTime * 1000;
-        const stepT = performance.now();
-        api.playbackSpeed = speed;
-        // the media player's own seek is synchronous: currentTime already reads its target
-        const seekBackMs = r1(before - element.currentTime * 1000)!;
-        await sleep(stepMs);
-        const first = lab().stats.driftLog!.find(e => e.time >= stepT);
-        stepRows.push({ seekBackMs, firstDriftMs: first ? r1(first.drift) : null });
+    // the last step's own time, and where the media was then
+    let lastStepT = t0;
+    let mediaAtLastStep = element.currentTime * 1000;
+    try {
+        if (settleOnly) {
+            // spike 11's settle rule: no forced re-sync; the drift rules still re-sync above the threshold
+            controller.speedChanged = (s: number) => {
+                const resync = controller.resync;
+                controller.resync = () => {};
+                try {
+                    speedChanged(s);
+                } finally {
+                    controller.resync = resync;
+                }
+            };
+        }
+        for (let i = 0; i < steps; i++) {
+            speed = Math.round((speed + stepSpeed) * 10000) / 10000;
+            const before = element.currentTime * 1000;
+            const stepT = performance.now();
+            api.playbackSpeed = speed;
+            // the media player's own seek is synchronous: currentTime already reads its target
+            mediaAtLastStep = element.currentTime * 1000;
+            const seekBackMs = r1(before - mediaAtLastStep)!;
+            lastStepT = stepT;
+            await sleep(stepMs);
+            const first = lab().stats.driftLog!.find(e => e.time >= stepT);
+            stepRows.push({ seekBackMs, firstDriftMs: first ? r1(first.drift) : null });
+        }
+    } finally {
+        controller.speedChanged = speedChanged;
+        lab().enableDriftLog(false);
     }
-    controller.speedChanged = speedChanged;
-    lab().enableDriftLog(false);
-    const lastStepT = performance.now();
-    await sleep(2000);
+    // 1.5 s after the last step the settled window opens (the media moves 1.5 s x speed on by then): read on until
+    // three beats are in it. Without three beats left the song ends first, and what was heard is judged.
+    const thirdBeat = beatMediaTimes.filter(t => t > mediaAtLastStep + 1500 * speed)[2];
+    const tailMs = thirdBeat === undefined ? 4500 : (thirdBeat - mediaAtLastStep) / speed + 200;
+    await sleep(Math.max(0, lastStepT + tailMs - performance.now()));
     const f1 = ctx().currentTime * sr;
     restore();
     const media = [...tapOnsets.media].sort((a, b) => a - b);
     const clicks = tapOnsets.synth.filter(f => f > f0 && f < f1);
     const abs = clicks.map(f => Math.abs(((f - nearest(media, f)) / sr) * 1000)).sort((a, b) => a - b);
-    // after the last step + 1.5 s settle the clicks must be back within S4b's tolerance
+    // from 1.5 s after the last step on the clicks must be back within S4b's tolerance
     const settledFrom = f0 + ((lastStepT - t0 + 1500) / 1000) * sr;
     const settled = clicks.filter(f => f > settledFrom).map(f => Math.abs(((f - nearest(media, f)) / sr) * 1000));
     const row = {
@@ -907,12 +1062,18 @@ async function sweepTest(fromSpeed: number, steps: number, stepSpeed: number, st
         steps,
         stepMs,
         resyncs: lab().stats.resyncTimes.filter(t => t > t0).length,
-        counts: `${clicks.length}/${media.filter(f => f > f0 && f < f1).length}`,
+        counts: countsBefore(
+            f1,
+            clicks,
+            media.filter(f => f > f0 && f < f1)
+        ),
         p95Ms: r1(abs[Math.floor(abs.length * 0.95)]),
         maxMs: r1(abs[abs.length - 1]),
         over20: abs.filter(x => x > 20).length,
+        settledClicks: settled.length,
         settledMaxMs: r1(settled.length ? Math.max(...settled) : Number.NaN),
-        settledWithinTolerance: settled.every(x => x <= firstClickToleranceMs(speed)),
+        // null with fewer than two clicks in the window: there is nothing to judge
+        settledOk: settled.length < 2 ? null : settled.every(x => x <= firstClickToleranceMs(speed)),
         settleOnly,
         stepRows
     };
@@ -921,44 +1082,58 @@ async function sweepTest(fromSpeed: number, steps: number, stepSpeed: number, st
 }
 
 /**
- * F-9d: the rhythm game's auto-BPM loop: +`bpmStep` BPM each time the loop wraps.
+ * F-9d: the rhythm game's auto-BPM loop: +`bpmStep` BPM each time the loop wraps. `resyncs` counts from Play; each
+ * repetition's first beat is judged against S4b's tolerance at the speed that repetition runs at.
  */
 async function autoBpmLoopTest(startSpeed: number, bpmStep = 5, wraps = 10, bars = 2, beatsPerBar = 4) {
     const sr = ctx().sampleRate;
     const bpm = api.score!.tempo;
     const step = bpmStep / bpm;
     let speed = startSpeed;
+    // the speed each wrap sets: the repetition after it runs at that speed
+    const wrapSpeeds: number[] = [];
     const unsubscribe = api.playerFinished.on(() => {
         speed = Math.round((speed + step) * 10000) / 10000;
         api.playbackSpeed = speed;
+        wrapSpeeds.push(speed);
     });
     const wrapFrames: number[] = [];
     const unsubscribeWraps = api.playerFinished.on(() => wrapFrames.push(ctx().currentTime * sr));
-    measuringSetup(startSpeed);
-    const k0 = 40;
-    const startMedia = beatMediaTimes[k0];
-    const endMedia = beatMediaTimes[k0 + bars * beatsPerBar];
-    api.timePosition = alphaTabTimeForMedia(endMedia);
-    await sleep(150);
-    const endTick = api.tickPosition;
-    api.timePosition = alphaTabTimeForMedia(startMedia);
-    await sleep(150);
-    const range = new alphaTab.synth.PlaybackRange();
-    range.startTick = api.tickPosition;
-    range.endTick = endTick;
-    api.playbackRange = range;
-    api.isLooping = true;
-    tapOnsets.media.length = 0;
-    tapOnsets.synth.length = 0;
-    const playFrame = ctx().currentTime * sr;
-    api.play();
-    while (wrapFrames.length < wraps) {
-        await sleep(100);
+    let playFrame = 0;
+    let playT = 0;
+    try {
+        measuringSetup(startSpeed);
+        const k0 = 40;
+        const startMedia = beatMediaTimes[k0];
+        const endMedia = beatMediaTimes[k0 + bars * beatsPerBar];
+        api.timePosition = alphaTabTimeForMedia(endMedia);
+        await sleep(150);
+        const endTick = api.tickPosition;
+        api.timePosition = alphaTabTimeForMedia(startMedia);
+        await sleep(150);
+        const range = new alphaTab.synth.PlaybackRange();
+        range.startTick = api.tickPosition;
+        range.endTick = endTick;
+        api.playbackRange = range;
+        api.isLooping = true;
+        tapOnsets.media.length = 0;
+        tapOnsets.synth.length = 0;
+        playFrame = ctx().currentTime * sr;
+        playT = performance.now();
+        api.play();
+        // the slowest repetition is the longest: a loop that has not wrapped by then has stopped
+        const slowest = Math.max(0.1, Math.min(startSpeed, startSpeed + step * wraps));
+        await waitUntil(
+            `${wraps} wraps of the loop`,
+            () => wrapFrames.length >= wraps,
+            ((endMedia - startMedia) / slowest) * (wraps + 1) + 10000
+        );
+        await sleep(((endMedia - startMedia) / speed) * 0.5);
+    } finally {
+        unsubscribe();
+        unsubscribeWraps();
+        restore();
     }
-    await sleep(((endMedia - startMedia) / speed) * 0.5);
-    unsubscribe();
-    unsubscribeWraps();
-    restore();
     const media = tapOnsets.media.filter(f => f > playFrame).sort((a, b) => a - b);
     const synth = tapOnsets.synth.filter(f => f > playFrame).sort((a, b) => a - b);
     // each repetition's first beat: the first beep after each wrap
@@ -966,23 +1141,31 @@ async function autoBpmLoopTest(startSpeed: number, bpmStep = 5, wraps = 10, bars
         const beep = media.find(f => f > w);
         return beep === undefined || synth.length === 0 ? null : r1(((nearest(synth, beep) - beep) / sr) * 1000);
     });
-    const missing = media.filter(m => Math.abs(((nearest(synth, m) - m) / sr) * 1000) > 50).length;
+    const missing =
+        synth.length === 0
+            ? media.length
+            : media.filter(m => Math.abs(((nearest(synth, m) - m) / sr) * 1000) > 50).length;
     const row = {
         startSpeed,
         endSpeed: speed,
         bpmStep,
         wraps: wrapFrames.length,
         firstBeatsMs: firstBeats,
-        firstBeatsWithinTolerance: firstBeats.every(x => x !== null && Math.abs(x) <= 20),
+        firstBeatsWithinTolerance: firstBeats.every(
+            (x, i) => x !== null && Math.abs(x) <= firstClickToleranceMs(wrapSpeeds[i])
+        ),
         missing,
-        resyncs: lab().stats.resyncTimes.length
+        resyncs: lab().stats.resyncTimes.filter(t => t > playT).length
     };
     record('autoBpmLoopTest', row);
     return row;
 }
 
 /**
- * F-9a / F-9d: the first Play at a speed with no probe value and no start lead: the straight-line guesses.
+ * F-9a / F-9d: the first Play at a speed with no probe value and no start lead: the straight-line guesses. The
+ * speed change before the Play already starts the speed's probe, so its value can land before the Play:
+ * `landedBeforePlay` says whether it did (then the Play was not at an unprobed speed), and `probeArrivedAfterPlayMs`
+ * counts from the Play (negative before it).
  */
 async function firstPlayAtUnprobedSpeedTest(speeds: number[], beforeBeatMs = 30) {
     const rows: object[] = [];
@@ -992,15 +1175,18 @@ async function firstPlayAtUnprobedSpeedTest(speeds: number[], beforeBeatMs = 30)
         const guessedLead = mediaSynth().controller.startLeads.get(speed);
         const guessedLatency = MediaLatencyProbe.cache.get(speed);
         const probesBefore = lab().probes.length;
-        const playT = performance.now();
         const [row] = await startTest(1, beforeBeatMs, speed);
-        const probe = lab().probes.slice(probesBefore).find(p => p.speed === speed);
+        const probe = lab()
+            .probes.slice(probesBefore)
+            .find(p => p.speed === speed);
+        const { playAtMs, ...started } = row;
         rows.push({
             speed,
             guessedLeadMs: r1(guessedLead),
             guessedLatencyMs: r1(guessedLatency),
-            probeArrivedAfterPlayMs: probe ? Math.round(probe.time - playT) : null,
-            ...row
+            landedBeforePlay: probe !== undefined && probe.time < playAtMs,
+            probeArrivedAfterPlayMs: probe ? Math.round(probe.time - playAtMs) : null,
+            ...started
         });
     }
     record('firstPlayAtUnprobedSpeedTest', rows);
@@ -1009,49 +1195,56 @@ async function firstPlayAtUnprobedSpeedTest(speeds: number[], beforeBeatMs = 30)
 
 /**
  * D-1 (F-9a): a probe value lands while a loop plays at an unprobed speed. forcedResync = true runs the spec's
- * current rule (re-sync on arrival) for comparison.
+ * current rule (re-sync on arrival) for comparison. Both arms start from a speed never played before: no probe value
+ * and no learned start lead. `resyncsAfterArrival` counts the 2 s that `clicksAfterMs` covers.
  */
 async function probeMidPlaybackTest(speed = 0.875, forcedResync = false) {
     const sr = ctx().sampleRate;
     const controller = mediaSynth().controller;
     const latencyChanged = controller.latencyChanged.bind(controller);
-    if (forcedResync) {
-        controller.latencyChanged = () => {
-            latencyChanged();
-            controller.resync();
+    try {
+        if (forcedResync) {
+            controller.latencyChanged = () => {
+                latencyChanged();
+                controller.resync();
+            };
+        }
+        lab().forgetProbeLatency(speed);
+        lab().forgetStartLead(speed);
+        measuringSetup(speed);
+        api.timePosition = alphaTabTimeForMedia(beatMediaTimes[40]);
+        await sleep(300);
+        tapOnsets.media.length = 0;
+        tapOnsets.synth.length = 0;
+        const probesBefore = lab().probes.length;
+        const playFrame = ctx().currentTime * sr;
+        const playT = performance.now();
+        api.play(); // queues this speed's probe first: it lands mid-playback
+        await sleep(8000);
+        restore();
+        const probe = lab()
+            .probes.slice(probesBefore)
+            .find(p => p.speed === speed);
+        const arrivalFrame = probe ? playFrame + ((probe.time - playT) / 1000) * sr : Number.NaN;
+        const media = [...tapOnsets.media].sort((a, b) => a - b);
+        const offsetsAround = (from: number, to: number) =>
+            tapOnsets.synth.filter(f => f > from && f < to).map(f => r1(((f - nearest(media, f)) / sr) * 1000)!);
+        const row = {
+            speed,
+            forcedResync,
+            probeArrivedAfterPlayMs: probe ? Math.round(probe.time - playT) : null,
+            probeLatencyMs: probe ? r1(probe.latencyMs) : null,
+            resyncsAfterArrival: probe
+                ? lab().stats.resyncTimes.filter(t => t >= probe.time && t <= probe.time + 2000).length
+                : null,
+            clicksBeforeMs: offsetsAround(arrivalFrame - sr, arrivalFrame),
+            clicksAfterMs: offsetsAround(arrivalFrame, arrivalFrame + 2 * sr)
         };
+        record('probeMidPlaybackTest', row);
+        return row;
+    } finally {
+        controller.latencyChanged = latencyChanged;
     }
-    lab().forgetProbeLatency(speed);
-    measuringSetup(speed);
-    api.timePosition = alphaTabTimeForMedia(beatMediaTimes[40]);
-    await sleep(300);
-    tapOnsets.media.length = 0;
-    tapOnsets.synth.length = 0;
-    const probesBefore = lab().probes.length;
-    const playFrame = ctx().currentTime * sr;
-    const playT = performance.now();
-    api.play(); // queues this speed's probe first: it lands mid-playback
-    await sleep(8000);
-    restore();
-    controller.latencyChanged = latencyChanged;
-    const probe = lab().probes.slice(probesBefore).find(p => p.speed === speed);
-    const arrivalFrame = probe ? playFrame + ((probe.time - playT) / 1000) * sr : Number.NaN;
-    const media = [...tapOnsets.media].sort((a, b) => a - b);
-    const offsetsAround = (from: number, to: number) =>
-        tapOnsets.synth
-            .filter(f => f > from && f < to)
-            .map(f => r1(((f - nearest(media, f)) / sr) * 1000)!);
-    const row = {
-        speed,
-        forcedResync,
-        probeArrivedAfterPlayMs: probe ? Math.round(probe.time - playT) : null,
-        probeLatencyMs: probe ? r1(probe.latencyMs) : null,
-        resyncsAfterArrival: probe ? lab().stats.resyncTimes.filter(t => t >= probe.time).length : null,
-        clicksBeforeMs: offsetsAround(arrivalFrame - sr, arrivalFrame),
-        clicksAfterMs: offsetsAround(arrivalFrame, arrivalFrame + 2 * sr)
-    };
-    record('probeMidPlaybackTest', row);
-    return row;
 }
 
 /**
@@ -1111,7 +1304,8 @@ async function playBeatTest(n = 4, speed = 1) {
         const mediaAfter = media.filter(f => f > playFrame);
         rows.push({
             statesAfterPlayBeat: states,
-            firstGapMs: mediaAfter.length && synthAfter.length ? r1(((synthAfter[0] - mediaAfter[0]) / sr) * 1000) : null,
+            firstGapMs:
+                mediaAfter.length && synthAfter.length ? r1(((synthAfter[0] - mediaAfter[0]) / sr) * 1000) : null,
             nextClicksMs: synthAfter.slice(0, 5).map(f => r1(((f - nearest(media, f)) / sr) * 1000))
         });
     }
@@ -1139,28 +1333,41 @@ async function reportTappedStart(tapFrame: number) {
     });
 }
 
+// a run from a button has no console to fail into (the iPad): its failure goes to the page's log
+function runFromButton(name: string, test: () => Promise<unknown>) {
+    test().catch(e => log(`error [sync-lab] ${name} failed: ${errorText(e)}`));
+}
+
 document.getElementById('play')!.addEventListener('click', () => {
     // api.playPause() runs inside the tap, as an app's Play button does
     const starting = api.playerState !== alphaTab.synth.PlayerState.Playing;
     const tapFrame = mixing && tapsReady ? ctx().currentTime * ctx().sampleRate : Number.NaN;
     api.playPause();
     if (starting && !Number.isNaN(tapFrame)) {
-        void reportTappedStart(tapFrame);
+        runFromButton('tapped start report', () => reportTappedStart(tapFrame));
     }
 });
-document.getElementById('measure')!.addEventListener('click', () => runMeasurement());
+document.getElementById('measure')!.addEventListener('click', () => runFromButton('measurement', runMeasurement));
 // the device runs (Task 24) need no console: the speed comes from the Speed select, the rows print in the log
 const selectedSpeed = () => Number.parseFloat((document.getElementById('speed') as HTMLSelectElement).value);
-document.getElementById('startTestButton')!.addEventListener('click', () => startTest(10, 30, selectedSpeed()));
-document.getElementById('loopTestButton')!.addEventListener('click', () => loopTest(selectedSpeed()));
-document.getElementById('countInTestButton')!.addEventListener('click', () => countInTest(6, selectedSpeed()));
-document.getElementById('seekTestButton')!.addEventListener('click', () => {
-    midPlaybackTest(10, 30, 'seek', selectedSpeed());
-});
+document
+    .getElementById('startTestButton')!
+    .addEventListener('click', () => runFromButton('start test', () => startTest(10, 30, selectedSpeed())));
+document
+    .getElementById('loopTestButton')!
+    .addEventListener('click', () => runFromButton('loop test', () => loopTest(selectedSpeed())));
+document
+    .getElementById('countInTestButton')!
+    .addEventListener('click', () => runFromButton('count-in test', () => countInTest(6, selectedSpeed())));
+document
+    .getElementById('seekTestButton')!
+    .addEventListener('click', () =>
+        runFromButton('seek test', () => midPlaybackTest(10, 30, 'seek', selectedSpeed()))
+    );
 document.getElementById('speedTestButton')!.addEventListener('click', () => {
     // from another speed: setting the speed the player already has changes nothing
     const speed = selectedSpeed();
-    midPlaybackTest(10, 30, 'speed', speed, speed === 1 ? 0.75 : 1);
+    runFromButton('speed-change test', () => midPlaybackTest(10, 30, 'speed', speed, speed === 1 ? 0.75 : 1));
 });
 document.getElementById('speed')!.addEventListener('change', e => {
     api.playbackSpeed = Number.parseFloat((e.target as HTMLSelectElement).value);
@@ -1193,6 +1400,7 @@ function applyVolumesAndSound() {
 mediaVolEl.addEventListener('input', applyVolumesAndSound);
 synthVolEl.addEventListener('input', applyVolumesAndSound);
 
+// the taps are set up once per page (setupTaps sets tapsReady)
 let tapsReady = false;
 api.playerReady.on(async () => {
     fileNameEl.textContent = pendingFileName;
@@ -1203,8 +1411,8 @@ api.playerReady.on(async () => {
     }
     applyMix();
     applyVolumes();
+    applySound(); // a second file: the volume setters wrote the master gain again
     if (!tapsReady) {
-        tapsReady = true;
         await setupTaps();
     }
 });
