@@ -74,6 +74,27 @@ function snapBackOnPause(h: MediaSynthHarness, backMs: number): void {
     });
 }
 
+/**
+ * The video paused at 5330; a click far ahead (40 quarter notes in) moves it, and Play comes before the video has shown
+ * that seek, so it still reports 5330 while it plays. Returns the click's media time; the next step is the test's.
+ */
+async function aClickThenAQuickPlay(): Promise<{ h: MediaSynthHarness; target: number }> {
+    const h = await externalPlaying(); // the last update: 5300
+    h.timer.advance(30);
+    h.player.pause();
+    h.timer.advance(20);
+    h.report(5330); // where the video stopped
+    h.timer.advance(200);
+    h.player.tickPosition = 960 * 40;
+    const target = h.media.mediaTimeOfPosition;
+    h.timer.advance(50);
+    h.player.play(); // no count-in: the video starts at once
+    h.timer.advance(50);
+    h.report(5330); // the video has not shown the click's seek yet
+    h.timer.advance(50);
+    return { h, target };
+}
+
 describe('MediaSynthPlayerExternalTests', () => {
     it('a-seek-silences-the-synth-until-the-clock-has-a-fit-again', async () => {
         const h = await externalPlaying();
@@ -949,5 +970,35 @@ describe('MediaSynthPlayerExternalTests', () => {
         expect(h.handler!.seekTimes[seeks]).toBeCloseTo(target, 3);
         expect(last(h)).toBe('play:countIn=1');
         expect(h.synth.lastSeek()).toBeCloseTo(target, 3);
+    });
+
+    for (const countIn of [false, true]) {
+        it(`a-paused-move-the-media-has-not-shown-is-kept-across-a-play-and-pause${countIn ? '-then-counts-in' : ''}`, async () => {
+            const { h, target } = await aClickThenAQuickPlay();
+            h.player.pause();
+            h.timer.advance(20);
+            h.report(5330); // still where the video was before the click
+            expect(h.media.mediaTimeOfPosition).toBeCloseTo(target, 3); // alphaTab stays at the click
+            h.timer.advance(20);
+            const seeks = h.synth.seeks.length;
+            h.player.countInVolume = countIn ? 1 : 0;
+            h.player.play();
+            expect(last(h)).toBe(countIn ? 'play:countIn=1' : 'play:countIn=0');
+            expect(h.synth.seeks.length).toBe(seeks + 1);
+            expect(h.synth.lastSeek()).toBeCloseTo(target, 3);
+        });
+    }
+
+    it('a-stop-after-a-play-the-media-has-not-shown-a-click-for-stays-at-the-song-start', async () => {
+        const { h } = await aClickThenAQuickPlay();
+        h.player.stop();
+        h.timer.advance(20);
+        h.report(5330); // still where the video was before the click
+        expect(h.player.timePosition).toBe(0);
+        h.timer.advance(20);
+        h.player.countInVolume = 1;
+        h.player.play();
+        expect(last(h)).toBe('play:countIn=1');
+        expect(h.synth.lastSeek()).toBeCloseTo(0, 3);
     });
 });

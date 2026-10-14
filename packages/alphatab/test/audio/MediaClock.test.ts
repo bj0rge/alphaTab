@@ -350,6 +350,55 @@ describe('ExternalMediaClockTests', () => {
         expect(clock.movedSincePause()).toBe(true);
     });
 
+    it('a-paused-move-kept-across-a-play-and-pause-goes-by-its-side-again', () => {
+        // Play and Pause before the media showed the move: once paused again the side of the move applies, from where the
+        // media was before it, also after the pause notes the move it has not shown yet
+        const { clock, time } = pausedAt5300();
+        clock.notePausedPosition(5000);
+        time.heard = 1.05;
+        clock.setPlaying(true);
+        expect(clock.isFromBeforeJump(5300)).toBe(false); // playing: within 500 ms of the target
+        time.heard = 1.1;
+        clock.setPlaying(false);
+        expect(clock.isFromBeforeJump(5300)).toBe(true);
+        expect(clock.isFromBeforeJump(5000)).toBe(false);
+        clock.notePausedPosition(5000);
+        expect(clock.isFromBeforeJump(5300)).toBe(true);
+        expect(clock.isFromBeforeJump(5320)).toBe(true);
+        expect(clock.isFromBeforeJump(5000)).toBe(false);
+    });
+
+    it('a-paused-move-before-the-first-update-goes-by-the-jump-tolerance', () => {
+        // no update yet: there is no old position to tell the side of the move from
+        const time = new FakeHeardTime();
+        const clock = new ExternalMediaClock(time, () => 0);
+        time.heard = 1;
+        clock.notePausedPosition(5000);
+        expect(clock.isSeeking).toBe(true);
+        expect(clock.isFromBeforeJump(5400)).toBe(false);
+        expect(clock.isFromBeforeJump(5600)).toBe(true);
+        time.heard = 1.05;
+        clock.setPlaying(true);
+        time.heard = 1.1;
+        clock.setPlaying(false);
+        expect(clock.isFromBeforeJump(5400)).toBe(false);
+        expect(clock.isFromBeforeJump(5600)).toBe(true);
+    });
+
+    it('a-paused-move-given-up-does-not-keep-where-the-media-was', () => {
+        // the media did not show the first move within JumpWaitMaxS, across a Play and Pause: the next move goes from
+        // where the clock shows the media now, not from where it was before the first
+        const { clock, time } = pausedAt5300();
+        clock.notePausedPosition(5000);
+        time.heard = 1.05;
+        clock.setPlaying(true);
+        time.heard = 2.5;
+        clock.setPlaying(false);
+        clock.notePausedPosition(5500);
+        expect(clock.isFromBeforeJump(5000)).toBe(true);
+        expect(clock.isFromBeforeJump(5300)).toBe(false); // nearer the target than 5000
+    });
+
     it('a-jump-while-playing-keeps-the-jump-tolerance', () => {
         // the playing media moves toward where it was: within 500 ms of the target an update counts, also once the
         // media is paused before it showed the jump

@@ -197,8 +197,9 @@ export class ExternalMediaClock implements IMediaClock {
     private _pausedAt: number = Number.NEGATIVE_INFINITY;
     private _jumpTarget: number = Number.NaN;
     /**
-     * A move of the paused media that the media has not shown yet: where the clock showed the media before it. NaN
-     * for a jump made while playing, and once the media plays.
+     * A move of the paused media that the media has not shown yet: where the clock showed the media before it, kept
+     * while the media plays (the jump tolerance applies then), so the next move still knows it. NaN for a jump made
+     * while playing.
      */
     private _jumpFrom: number = Number.NaN;
     private _jumpAt: number = 0;
@@ -262,10 +263,6 @@ export class ExternalMediaClock implements IMediaClock {
         this._playing = playing;
         this._sawMovement = false;
         if (playing) {
-            // a move of the paused media still waited for: the playing media moves from the target toward and past
-            // where it was, so the rest of the wait goes by the jump tolerance (with sparse updates the side of the
-            // move would drop its fresh updates)
-            this._jumpFrom = Number.NaN;
             // fit the playing media only: the updates from while it was paused would bend the line
             this._samples = this._samples.slice(-1);
             this._fit();
@@ -282,10 +279,11 @@ export class ExternalMediaClock implements IMediaClock {
      *
      * Until an update shows the move, the media shows where it stopped (at or after its last update) or the new
      * position, and the move can be shorter than {@link JumpToleranceMs} (the API's move back to the beat's start on
-     * Pause): while it stays paused, an update closer to where the clock showed the media before the move than to
+     * Pause): while the media is paused, an update closer to where the clock showed the media before the move than to
      * `position` is from before the move (a tie shows the move: a move to where the clock already shows the media ends
-     * at the first update). A move the media has not shown yet keeps that old position for the next one. Without an old
-     * position (no update yet) the jump tolerance applies.
+     * at the first update); while it plays, the jump tolerance applies. A move the media has not shown yet keeps that
+     * old position for the next one, also across a Play and a Pause. Without an old position (no update yet) the jump
+     * tolerance applies.
      */
     public notePausedPosition(position: number): void {
         const now = this._source.heardContextTime();
@@ -340,6 +338,8 @@ export class ExternalMediaClock implements IMediaClock {
             // shows the move)
             return Math.abs(positionMs - this._jumpFrom) < Math.abs(positionMs - this._jumpTarget);
         }
+        // otherwise the jump tolerance: a playing media moves from the target toward and past where it was, and with
+        // sparse updates the side of the move would drop its fresh updates
         return Math.abs(positionMs - this._jumpTarget) > ExternalMediaClock.JumpToleranceMs;
     }
 
