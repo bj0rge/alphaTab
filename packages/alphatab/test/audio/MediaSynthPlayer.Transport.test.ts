@@ -180,6 +180,18 @@ describe('MediaSynthPlayerTransportTests', () => {
         expect(h.mediaOutput!.isPlaying).toBe(false);
     });
 
+    it('a-finished-handler-that-destroys-the-player-fires-no-stop-at-the-song-end', async () => {
+        // the song end stops both, as today; not in a player the app's finished handler destroyed
+        const h = await playing(41950);
+        h.mediaOutput!.backingTrackDuration = 60000;
+        h.player.finished.on(() => h.player.destroy());
+        h.mediaOutput!.advance(100);
+        expect(h.finished).toBe(1);
+        expect(h.states).toEqual(['Playing']);
+        // nothing reaches the destroyed synthesizer after its destroy
+        expect(h.synth.calls.slice(h.synth.calls.indexOf('destroy') + 1)).toEqual([]);
+    });
+
     it('a-recreated-player-keeps-the-learned-start-values', async () => {
         // alphaTab recreates the player on a playerMode change, or with EnabledAutomatic between a file with a
         // recording and one without; the browser hands each new player the page's learned values (Task 20)

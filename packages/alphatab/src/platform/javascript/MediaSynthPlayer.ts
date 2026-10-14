@@ -1087,6 +1087,10 @@ export class MediaSynthPlayer implements IAlphaSynth {
     private _onMediaFinished(): void {
         // the media reached the song's end by itself (no range, not looping): finished, and both stop, as today
         (this.finished as EventEmitter).trigger();
+        if (this._destroyed) {
+            // the handler destroyed the player: nothing stops, and no state change fires into it
+            return;
+        }
         if (this._state === PlayerState.Playing) {
             this._interrupt();
             this._synth.stop();
@@ -1150,22 +1154,24 @@ export class MediaSynthPlayer implements IAlphaSynth {
     }
 
     /**
-     * The range end (the song's end when looping without a range): finished, then the wrap or the stop (§6.2). What
-     * the app's finished handler did to the player wins: a destroyed player gets nothing more, and a paused or
-     * stopped one is moved back to the range start but not restarted.
+     * The range end (the song's end when looping without a range): finished, then the wrap or the stop (§6.2). Whether
+     * it wraps or stops is decided before the app's finished handler runs, as the synthesizer alone does: a handler
+     * that clears isLooping ("loop N times") still gets this last pass, and one that sets it at a range end that does
+     * not loop still stops. What the handler did to the player wins: a destroyed player gets nothing more, and a paused
+     * or stopped one is moved back to the range start but not restarted.
      */
     private _wrap(): void {
+        const looping = this._isLooping;
         (this.finished as EventEmitter).trigger();
         if (this._destroyed) {
             // the handler destroyed the player: nothing restarts, and no state change fires into it
             return;
         }
-        if (!this._isLooping) {
+        if (!looping) {
             // back to the range start, stateChanged(Paused, stopped), as today
             this.stop();
             return;
         }
-        this.diagnostics.wraps.push(this._timer.now());
         const range = this._playbackRange;
         if (this._externalClock) {
             // F-5: external media wraps without pausing: seek it; the synth waits until its clock has a fit again
@@ -1173,7 +1179,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
             const start = this._media.tickToMediaTime(range ? range.startTick : 0);
             this._media.seekMediaTo(start);
             if (this._state === PlayerState.Playing) {
-                // (what the app's handlers did to the player wins, as below)
+                this.diagnostics.wraps.push(this._timer.now());
                 this._jumpExternal(start);
             }
             return;
@@ -1187,6 +1193,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
             this._media.timePosition = 0;
         }
         if (this._state === PlayerState.Playing) {
+            this.diagnostics.wraps.push(this._timer.now());
             this._startPlayback(false);
         }
     }
