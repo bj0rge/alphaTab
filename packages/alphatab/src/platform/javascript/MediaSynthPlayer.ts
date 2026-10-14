@@ -423,6 +423,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
                 this._cancelCountIn();
                 this._playMedia();
                 this._watchMediaStart(MediaSyncConstants.MediaStartCheckMs);
+                this._scheduleWrap(0);
             }
         }
         this._checkReady();
@@ -772,6 +773,7 @@ export class MediaSynthPlayer implements IAlphaSynth {
             if (!this._isMixing) {
                 // the synthesizer failed while the media seeked: the media starts alone, without waiting for it
                 this._playMedia();
+                this._scheduleWrap(0);
                 return;
             }
             this._synth.seekToMediaTime(plan.synthSeekTo);
