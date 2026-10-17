@@ -15,6 +15,9 @@ import { PlayerMode } from '@coderline/alphatab/PlayerSettings';
 import { Logger } from '@coderline/alphatab/Logger';
 import { FileLoadError } from '@coderline/alphatab/FileLoadError';
 import type { AlphaSynthWrapper } from '@coderline/alphatab/synth/AlphaSynthWrapper';
+import { AlphaSynthAudioWorkletOutput } from '@coderline/alphatab/platform/javascript/AlphaSynthAudioWorkletOutput';
+import { MediaSynthPlayer } from '@coderline/alphatab/platform/javascript/MediaSynthPlayer';
+import type { IMediaFollowingOutput } from '@coderline/alphatab/platform/javascript/MediaSynthTypes';
 
 /**
  * @target web
@@ -203,6 +206,46 @@ export class AlphaTabApi extends AlphaTabApiBase<SettingsJson | Settings> {
     /**
      * @inheritdoc
      */
+    /**
+     * @inheritdoc
+     */
+    public override changeTrackOutputBus(tracks: Track[], bus: number): void {
+        const trackList: Track[] = this._trackIndexesToTracks((this.uiFacade as BrowserUiFacade).parseTracks(tracks));
+        super.changeTrackOutputBus(trackList, bus);
+    }
+
+    /**
+     * One WebAudio node per output bus of the synthesizer, connected to {@link synthBusReturnNode} by default.
+     * @remarks
+     * Null unless `player.synthOutputBusCount` is above 1 and the synthesizer plays through an AudioWorklet. Read it
+     * on `playerReady`: a new player (mode or setting change) comes with new nodes, in a new AudioContext.
+     * To process a bus: `bus.disconnect(); bus.connect(myInput); myOutput.connect(api.synthBusReturnNode)`.
+     * Fork-only (tabz).
+     * @category Properties - Player
+     * @since 1.9.0
+     */
+    public get synthBusNodes(): GainNode[] | null {
+        return this._busOutput?.busNodes ?? null;
+    }
+
+    /**
+     * Where the bus nodes meet again: the synthesizer's volume, the mixing with a backing track and the output follow.
+     * @category Properties - Player
+     * @since 1.9.0
+     */
+    public get synthBusReturnNode(): GainNode | null {
+        return this._busOutput?.busReturnNode ?? null;
+    }
+
+    private get _busOutput(): AlphaSynthAudioWorkletOutput | IMediaFollowingOutput | null {
+        const instance = (this.player as AlphaSynthWrapper | null)?.instance;
+        if (instance instanceof MediaSynthPlayer) {
+            return instance.diagnostics.synthOutput;
+        }
+        const output = instance?.output;
+        return output instanceof AlphaSynthAudioWorkletOutput ? output : null;
+    }
+
     public override changeTrackMute(tracks: Track[], mute: boolean): void {
         const trackList: Track[] = this._trackIndexesToTracks((this.uiFacade as BrowserUiFacade).parseTracks(tracks));
         super.changeTrackMute(trackList, mute);

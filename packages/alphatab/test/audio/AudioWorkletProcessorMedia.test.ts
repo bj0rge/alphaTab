@@ -298,3 +298,82 @@ describe('probe tap processor', () => {
         expect(onsetFrames(proc)[0]).toBe(0); // it did hear the loud input
     });
 });
+
+describe('processor buses', () => {
+    function busProcessor(busCount: number): { proc: any; port: ProcPort } {
+        const proc = new processorClass({ processorOptions: { bufferTimeInMilliseconds: 500, busCount } });
+        return { proc, port: proc.port };
+    }
+
+    function outputs(busCount: number): Float32Array[][] {
+        const result: Float32Array[][] = [];
+        for (let b = 0; b < busCount; b++) {
+            result.push([new Float32Array(128), new Float32Array(128)]);
+        }
+        return result;
+    }
+
+    it('deinterleaves a stereo pair per bus into its output', () => {
+        const { proc, port } = busProcessor(3);
+        // frame f, bus b: left = b + f / 1000, right = -(b + f / 1000)
+        const frames = 200;
+        const samples = new Float32Array(frames * 6);
+        for (let f = 0; f < frames; f++) {
+            for (let b = 0; b < 3; b++) {
+                samples[f * 6 + b * 2] = b + f / 1000;
+                samples[f * 6 + b * 2 + 1] = -(b + f / 1000);
+            }
+        }
+        port.send({ cmd: 'alphaSynth.output.addSamples', samples });
+        const first = outputs(3);
+        expect(proc.process([], first, {})).toBe(true);
+        for (let b = 0; b < 3; b++) {
+            expect(first[b][0][5]).toBeCloseTo(b + 5 / 1000, 6);
+            expect(first[b][1][127]).toBeCloseTo(-(b + 127 / 1000), 6);
+        }
+        expect(port.of('alphaSynth.output.samplesPlayed')[0].samples).toBe(128);
+
+        // 72 frames left: the rest of the block is silent on every bus
+        const second = outputs(3);
+        proc.process([], second, {});
+        for (let b = 0; b < 3; b++) {
+            expect(second[b][0][71]).toBeCloseTo(b + 199 / 1000, 6);
+            expect(second[b][0][72]).toBe(0);
+            expect(second[b][1][127]).toBe(0);
+        }
+        expect(port.of('alphaSynth.output.samplesPlayed')[1].samples).toBe(72);
+    });
+
+    it('a full ring buffer keeps frames whole', () => {
+        const { proc, port } = busProcessor(3);
+        // far more than the buffer holds: the overflow is dropped on a frame boundary
+        for (let i = 0; i < 40; i++) {
+            port.send({ cmd: 'alphaSynth.output.addSamples', samples: new Float32Array(4096 * 3).fill(0.25) });
+        }
+        expect(proc._circularBuffer.count % 6).toBe(0);
+        const out = outputs(3);
+        proc.process([], out, {});
+        expect(out[2][1][127]).toBe(0.25);
+    });
+
+    it('requests a chunk per BufferSize values of each bus', () => {
+        const { proc, port } = busProcessor(2);
+        proc.process([], outputs(2), {});
+        const requests = port.of('alphaSynth.output.sampleRequest').length;
+        expect(requests).toBeGreaterThan(0);
+        // the requested chunks are counted as buffered: the next block asks for nothing more
+        port.clear();
+        proc.process([], outputs(2), {});
+        expect(port.of('alphaSynth.output.sampleRequest').length).toBe(0);
+    });
+
+    it('hold silences every bus', () => {
+        const { proc, port } = busProcessor(2);
+        port.send({ cmd: 'alphaSynth.output.addSamples', samples: new Float32Array(512).fill(0.5) });
+        port.send({ cmd: 'alphaSynth.output.hold' });
+        const out = outputs(2);
+        out[1][0].fill(1);
+        proc.process([], out, {});
+        expect(out[1][0][0]).toBe(0);
+    });
+});

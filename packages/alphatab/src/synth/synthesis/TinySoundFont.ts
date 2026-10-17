@@ -65,8 +65,39 @@ export class TinySoundFont implements IAudioSampleSynthesizer {
     public timeSignatureDenominator: number = 0;
     private _metronomeChannel: number = SynthConstants.DefaultChannelCount - 1;
 
-    public constructor(sampleRate: number) {
+    // output buses: with more than one, each frame holds one stereo pair per bus ([b0L b0R b1L b1R ...])
+    private _outputBusCount: number = 1;
+    private _channelBuses: Map<number, number> = new Map<number, number>();
+    private _busBuffers: Float32Array[] = [];
+
+    public constructor(sampleRate: number, outputBusCount: number = 1) {
         this.outSampleRate = sampleRate;
+        this._outputBusCount = Math.max(1, outputBusCount | 0);
+    }
+
+    public get outputBusCount(): number {
+        return this._outputBusCount;
+    }
+
+    public channelSetOutputBus(channel: number, bus: number): void {
+        if (bus > 0) {
+            this._channelBuses.set(channel, bus);
+        } else {
+            this._channelBuses.delete(channel);
+        }
+    }
+
+    public resetChannelOutputBuses(): void {
+        this._channelBuses = new Map<number, number>();
+    }
+
+    private _busOf(channel: number): number {
+        // the metronome and channels routed to a missing bus play on bus 0
+        if (channel === this._metronomeChannel || !this._channelBuses.has(channel)) {
+            return 0;
+        }
+        const bus: number = this._channelBuses.get(channel)!;
+        return bus < this._outputBusCount ? bus : 0;
     }
 
     public synthesize(buffer: Float32Array, bufferPos: number, sampleCount: number): SynthEvent[] {
@@ -197,6 +228,11 @@ export class TinySoundFont implements IAudioSampleSynthesizer {
             processedEvents.push(m);
         }
 
+        if (buffer && this._outputBusCount > 1) {
+            this._renderBuses(buffer, bufferPos, sampleCount, anySolo);
+            return processedEvents;
+        }
+
         // voice processing loop
         for (const voice of this._voices) {
             if (voice.playingPreset !== -1) {
@@ -216,6 +252,42 @@ export class TinySoundFont implements IAudioSampleSynthesizer {
         }
 
         return processedEvents;
+    }
+
+    private _renderBuses(buffer: Float32Array, bufferPos: number, sampleCount: number, anySolo: boolean): void {
+        const busCount: number = this._outputBusCount;
+        const busValues: number = sampleCount * SynthConstants.AudioChannels;
+        if (this._busBuffers.length !== busCount || this._busBuffers[0].length < busValues) {
+            this._busBuffers = [];
+            for (let b = 0; b < busCount; b++) {
+                this._busBuffers.push(new Float32Array(busValues));
+            }
+        }
+        for (const busBuffer of this._busBuffers) {
+            busBuffer.fill(0, 0, busValues);
+        }
+
+        for (const voice of this._voices) {
+            if (voice.playingPreset !== -1) {
+                const channel: number = voice.playingChannel;
+                const isChannelMuted: boolean =
+                    this._mutedChannels.has(channel) ||
+                    (anySolo && channel !== this._metronomeChannel && !this._soloChannels.has(channel));
+                voice.render(this, this._busBuffers[this._busOf(channel)], 0, sampleCount, isChannelMuted);
+            }
+        }
+
+        // interleave the buses frame by frame
+        const stride: number = busCount * SynthConstants.AudioChannels;
+        for (let b = 0; b < busCount; b++) {
+            const busBuffer: Float32Array = this._busBuffers[b];
+            let target: number = bufferPos + b * SynthConstants.AudioChannels;
+            for (let i = 0; i < busValues; i += SynthConstants.AudioChannels) {
+                buffer[target] += busBuffer[i];
+                buffer[target + 1] += busBuffer[i + 1];
+                target += stride;
+            }
+        }
     }
 
     public processMidiMessage(e: MidiEvent): void {

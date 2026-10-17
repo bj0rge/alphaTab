@@ -44,7 +44,7 @@ export class AlphaSynthWebWorker {
                 Logger.logLevel = data.logLevel;
                 {
                     const output = new AlphaSynthWorkerSynthOutput(this._main);
-                    this._player = new AlphaSynth(output, data.bufferTimeInMilliseconds);
+                    this._player = new AlphaSynth(output, data.bufferTimeInMilliseconds, data.outputBusCount);
                     this._player.mediaSampleOutput = output;
                 }
                 this._player.positionChanged.on(e => this.onPositionChanged(e));
@@ -136,6 +136,12 @@ export class AlphaSynthWebWorker {
                 break;
             case 'alphaSynth.setChannelSolo':
                 this._player.setChannelSolo(data.channel, data.solo);
+                break;
+            case 'alphaSynth.setChannelOutputBus':
+                this._player.setChannelOutputBus(data.channel, data.bus);
+                break;
+            case 'alphaSynth.resetChannelOutputBuses':
+                this._player.resetChannelOutputBuses();
                 break;
             case 'alphaSynth.setChannelVolume':
                 this._player.setChannelVolume(data.channel, data.volume);

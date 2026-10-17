@@ -419,6 +419,18 @@ export class AlphaSynthWrapper implements IAlphaSynth {
         }
     }
 
+    public setChannelOutputBus(channel: number, bus: number): void {
+        if (this._instance) {
+            this._instance!.setChannelOutputBus(channel, bus);
+        }
+    }
+
+    public resetChannelOutputBuses(): void {
+        if (this._instance) {
+            this._instance!.resetChannelOutputBuses();
+        }
+    }
+
     public readonly ready: IEventEmitter;
     public readonly readyForPlayback: IEventEmitter;
     public readonly finished: IEventEmitter = new EventEmitter();

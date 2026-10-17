@@ -222,6 +222,8 @@ export class FakeMediaSynth implements IMediaSynth {
     public resetChannelStates(): void {}
     public setChannelSolo(_channel: number, _solo: boolean): void {}
     public setChannelVolume(_channel: number, _volume: number): void {}
+    public setChannelOutputBus(_channel: number, _bus: number): void {}
+    public resetChannelOutputBuses(): void {}
 
     public readonly ready: IEventEmitter = new EventEmitter();
     public readonly readyForPlayback: IEventEmitter = new EventEmitter();
@@ -273,6 +275,8 @@ export class FakeFollowingOutput implements IMediaFollowingOutput {
     public keepAlive: boolean = false;
     public destinationNode: AudioNode | null = null;
     public readonly workletNode: AudioNode | null = null;
+    public readonly busNodes: GainNode[] | null = null;
+    public readonly busReturnNode: GainNode | null = null;
     public warmUps: number = 0;
     public readonly mediaTimestamp: IEventEmitterOfT<MediaTimestampEventArgs> =
         new EventEmitterOfT<MediaTimestampEventArgs>();

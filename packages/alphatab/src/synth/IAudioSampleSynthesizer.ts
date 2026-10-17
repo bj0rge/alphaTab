@@ -138,6 +138,21 @@ export interface IAudioSampleSynthesizer {
      * @param program The program to check.
      */
     hasSamplesForProgram(program: number): boolean;
+
+    /**
+     * The number of stereo output buses: {@link synthesize} writes `2 * outputBusCount` values per frame.
+     */
+    readonly outputBusCount: number;
+
+    /**
+     * Routes a channel to an output bus (0 is the default bus; a bus that does not exist means 0).
+     */
+    channelSetOutputBus(channel: number, bus: number): void;
+
+    /**
+     * Routes every channel back to bus 0.
+     */
+    resetChannelOutputBuses(): void;
     
     /**
      * Checks whether the synth has loaded the samples for a given percussion key.

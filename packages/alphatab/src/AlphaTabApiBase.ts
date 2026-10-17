@@ -169,6 +169,7 @@ export class AlphaTabApiBase<TSettings> {
     private _tracks: Track[] = [];
     private _actualPlayerMode: PlayerMode = PlayerMode.Disabled;
     private _actualMixing: boolean = false;
+    private _actualBusCount: number = 1;
     private _player!: AlphaSynthWrapper;
     private _renderer: ScoreRendererWrapper;
 
@@ -454,6 +455,12 @@ export class AlphaTabApiBase<TSettings> {
                     const volume: number = track.playbackInfo.volume / 16;
                     player.setChannelVolume(track.playbackInfo.primaryChannel, volume);
                     player.setChannelVolume(track.playbackInfo.secondaryChannel, volume);
+                    // a new player (or worker) starts with every channel on bus 0
+                    if (this._trackOutputBuses.has(track)) {
+                        const bus: number = this._trackOutputBuses.get(track)!;
+                        player.setChannelOutputBus(track.playbackInfo.primaryChannel, bus);
+                        player.setChannelOutputBus(track.playbackInfo.secondaryChannel, bus);
+                    }
                 }
             }
         });
@@ -1766,7 +1773,8 @@ export class AlphaTabApiBase<TSettings> {
         const mixing =
             this.settings.player.enableSynthesizerWithMedia &&
             (mode === PlayerMode.EnabledBackingTrack || mode === PlayerMode.EnabledExternalMedia);
-        if (mode !== this._actualPlayerMode || mixing !== this._actualMixing) {
+        const busCount = this.settings.player.synthOutputBusCount;
+        if (mode !== this._actualPlayerMode || mixing !== this._actualMixing || busCount !== this._actualBusCount) {
             this._destroyPlayer();
             this._updateCursors();
 
@@ -1796,6 +1804,7 @@ export class AlphaTabApiBase<TSettings> {
 
         this._actualPlayerMode = mode;
         this._actualMixing = mixing;
+        this._actualBusCount = busCount;
         if (!newPlayer) {
             return false;
         }
@@ -1974,6 +1983,31 @@ export class AlphaTabApiBase<TSettings> {
      * api.changeTrackMute(alphaTab.collections.List<alphaTab.model.Track>(api.score.tracks[0], api.score.tracks[1]), true);
      * ```
      */
+    /**
+     * Routes the given tracks to an output bus of the synthesizer, to process them separately.
+     * @param tracks The tracks to route.
+     * @param bus The bus (0 is the default bus of every track and of the metronome).
+     * @remarks
+     * Only has an effect with `player.synthOutputBusCount` above 1, on the AudioWorklet output: the bus then plays
+     * through its own node of `api.synthBusNodes`. A bus that does not exist means bus 0. Tracks sharing a MIDI
+     * channel (e.g. drums on channel 9 in older files) share a bus: the last call wins. Fork-only (tabz).
+     * @category Methods - Player
+     * @since 1.9.0
+     */
+    public changeTrackOutputBus(tracks: Track[], bus: number): void {
+        for (const track of tracks) {
+            if (bus > 0) {
+                this._trackOutputBuses.set(track, bus);
+            } else {
+                this._trackOutputBuses.delete(track);
+            }
+            this._player.setChannelOutputBus(track.playbackInfo.primaryChannel, bus);
+            this._player.setChannelOutputBus(track.playbackInfo.secondaryChannel, bus);
+        }
+    }
+
+    private _trackOutputBuses: Map<Track, number> = new Map<Track, number>();
+
     public changeTrackMute(tracks: Track[], mute: boolean): void {
         for (const track of tracks) {
             this._player.setChannelMute(track.playbackInfo.primaryChannel, mute);

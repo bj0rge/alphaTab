@@ -136,6 +136,13 @@ export class MediaSynthDiagnostics {
         return this._parts.synthOutput.workletNode;
     }
 
+    /**
+     * The synthesizer's output, with its bus nodes.
+     */
+    public get synthOutput(): IMediaFollowingOutput {
+        return this._parts.synthOutput;
+    }
+
     public get masterGainNode(): GainNode | null {
         return this._parts.graph.masterGainNode;
     }
@@ -1459,6 +1466,14 @@ export class MediaSynthPlayer implements IAlphaSynth {
 
     public setChannelVolume(channel: number, volume: number): void {
         this._synth.setChannelVolume(channel, volume);
+    }
+
+    public setChannelOutputBus(channel: number, bus: number): void {
+        this._synth.setChannelOutputBus(channel, bus);
+    }
+
+    public resetChannelOutputBuses(): void {
+        this._synth.resetChannelOutputBuses();
     }
 
     public readonly ready: IEventEmitter;

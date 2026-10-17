@@ -746,11 +746,8 @@ export class BrowserUiFacade implements IUiFacade<unknown> {
                 return null;
             }
 
-            player = new AlphaSynthWebWorkerApi(
-                new AlphaSynthAudioWorkletOutput(this._api.settings),
-                this._api.settings,
-                worker
-            );
+            const output = new AlphaSynthAudioWorkletOutput(this._api.settings);
+            player = new AlphaSynthWebWorkerApi(output, this._api.settings, worker, output.outputBusCount);
         } else if (supportsScriptProcessor) {
             Logger.debug(
                 'Player',

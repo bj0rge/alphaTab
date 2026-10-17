@@ -51,6 +51,7 @@ export class PlayerSettingsSerializer {
         o.set("buffertimeinmilliseconds", obj.bufferTimeInMilliseconds);
         o.set("enablesynthesizerwithmedia", obj.enableSynthesizerWithMedia);
         o.set("mediasyncoffsetinmilliseconds", obj.mediaSyncOffsetInMilliseconds);
+        o.set("synthoutputbuscount", obj.synthOutputBusCount);
         return o;
     }
     public static setProperty(obj: PlayerSettings, property: string, v: unknown): boolean {
@@ -127,6 +128,9 @@ export class PlayerSettingsSerializer {
                 return true;
             case "mediasyncoffsetinmilliseconds":
                 obj.mediaSyncOffsetInMilliseconds = v! as number;
+                return true;
+            case "synthoutputbuscount":
+                obj.synthOutputBusCount = v! as number;
                 return true;
         }
         if (["vibrato"].indexOf(property) >= 0) {

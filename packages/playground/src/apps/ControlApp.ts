@@ -89,6 +89,8 @@ export function buildSettings(options: ControlAppOptions, viewport: HTMLElement)
             scrollOffsetY: -20,
             // ?soundfont=<url> tries another SoundFont
             soundFont: params.get('soundfont') ?? options.soundFont ?? Paths.soundFont,
+            // ?buses=<n> plays the synthesizer on n stereo buses (fork, see BusDemo)
+            synthOutputBusCount: Number.parseInt(params.get('buses') ?? '1', 10),
             scrollElement: viewport
         }
     } satisfies alphaTab.json.SettingsJson);
@@ -150,11 +152,40 @@ export class ControlApp implements Mountable {
         this.nav = new NavMenu();
         document.body.appendChild(this.nav.root);
 
+        // ?buses=2&busTrack=<index>: that track plays on bus 1, through a low-pass filter (&busLowPass=<Hz>, 0: none)
+        const busTrack = new URL(window.location.href).searchParams.get('busTrack');
+        if (busTrack !== null && settings.player.synthOutputBusCount > 1) {
+            this.api.playerReady.on(() => this.routeBusDemo(Number.parseInt(busTrack, 10)));
+        }
+
         // expose for fiddling in dev tools
         if (typeof window !== 'undefined') {
             window.api = this.api;
             window.alphaTab = alphaTab;
         }
+    }
+
+    private routeBusDemo(trackIndex: number): void {
+        const track = this.api.score?.tracks[trackIndex];
+        const bus = this.api.synthBusNodes?.[1];
+        const returnNode = this.api.synthBusReturnNode;
+        if (!track || !bus || !returnNode) {
+            console.warn('bus demo: no track or no bus nodes', trackIndex, this.api.synthBusNodes);
+            return;
+        }
+        this.api.changeTrackOutputBus([track], 1);
+        const frequency = Number.parseFloat(new URL(window.location.href).searchParams.get('busLowPass') ?? '500');
+        if (frequency > 0) {
+            const lowPass = bus.context.createBiquadFilter();
+            lowPass.type = 'lowpass';
+            lowPass.frequency.value = frequency;
+            bus.disconnect();
+            bus.connect(lowPass).connect(returnNode);
+        }
+        console.info(
+            `bus demo: track ${trackIndex} "${track.name}" plays on bus 1` +
+                (frequency > 0 ? ` through a ${frequency} Hz low-pass` : ' unprocessed')
+        );
     }
 
     dispose(): void {

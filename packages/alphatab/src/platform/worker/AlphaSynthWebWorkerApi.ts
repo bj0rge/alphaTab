@@ -259,7 +259,15 @@ export class AlphaSynthWebWorkerApi implements IMediaSynth {
         });
     }
 
-    public constructor(player: ISynthOutput, settings: Settings, synthWorker: IAlphaSynthWorker) {
+    /**
+     * @param outputBusCount The stereo buses of each frame the worker renders: the output must play that many.
+     */
+    public constructor(
+        player: ISynthOutput,
+        settings: Settings,
+        synthWorker: IAlphaSynthWorker,
+        outputBusCount: number = 1
+    ) {
         this._workerIsReadyForPlayback = false;
         this._workerIsReady = false;
         this._outputIsReady = false;
@@ -282,7 +290,8 @@ export class AlphaSynthWebWorkerApi implements IMediaSynth {
             cmd: 'alphaSynth.initialize',
             sampleRate: this._output.sampleRate,
             logLevel: settings.core.logLevel,
-            bufferTimeInMilliseconds: settings.player.bufferTimeInMilliseconds
+            bufferTimeInMilliseconds: settings.player.bufferTimeInMilliseconds,
+            outputBusCount: outputBusCount
         });
         this.masterVolume = 1;
         this.playbackSpeed = 1;
@@ -386,6 +395,20 @@ export class AlphaSynthWebWorkerApi implements IMediaSynth {
             cmd: 'alphaSynth.setChannelSolo',
             channel: channel,
             solo: solo
+        });
+    }
+
+    public setChannelOutputBus(channel: number, bus: number): void {
+        this._synth.postMessage({
+            cmd: 'alphaSynth.setChannelOutputBus',
+            channel: channel,
+            bus: bus
+        });
+    }
+
+    public resetChannelOutputBuses(): void {
+        this._synth.postMessage({
+            cmd: 'alphaSynth.resetChannelOutputBuses'
         });
     }
 

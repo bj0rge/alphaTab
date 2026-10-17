@@ -588,6 +588,12 @@ class EmptyAudioSynthesizer implements IAudioSampleSynthesizer {
     public hasSamplesForPercussion(_key: number): boolean {
         return true;
     }
+
+    public readonly outputBusCount: number = 1;
+
+    public channelSetOutputBus(_channel: number, _bus: number): void {}
+
+    public resetChannelOutputBuses(): void {}
 }
 
 /**

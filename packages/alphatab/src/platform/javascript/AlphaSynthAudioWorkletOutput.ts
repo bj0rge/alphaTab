@@ -103,9 +103,15 @@ export class AlphaSynthWebWorklet {
                 private _markers: MediaChunkMarkers = new MediaChunkMarkers();
                 private _framesSinceReport: number = 0;
                 private _isHeld: boolean = false;
+                // one stereo output per bus: a frame holds a stereo pair per bus ([b0L b0R b1L b1R ...])
+                private _busCount: number = 1;
+                private _frameStride: number = SynthConstants.AudioChannels;
 
                 constructor(options: AudioWorkletNodeOptions) {
                     super(options);
+
+                    this._busCount = Math.max(1, options.processorOptions.busCount ?? 1);
+                    this._frameStride = SynthConstants.AudioChannels * this._busCount;
 
                     Logger.debug('WebAudio', 'creating processor');
 
@@ -114,8 +120,9 @@ export class AlphaSynthWebWorklet {
                             1000 /
                             AlphaSynthWebWorkletProcessor.BufferSize
                     );
+                    // a multiple of the frame stride: a truncated write never splits a frame
                     this._circularBuffer = new CircularSampleBuffer(
-                        AlphaSynthWebWorkletProcessor.BufferSize * this._bufferCount
+                        AlphaSynthWebWorkletProcessor.BufferSize * this._bufferCount * this._busCount
                     );
 
                     this.port.addEventListener('message', e => this._handleMessage(e));
@@ -136,7 +143,7 @@ export class AlphaSynthWebWorklet {
                             const f: Float32Array = data.samples;
                             const written = this._circularBuffer.write(f, 0, f.length);
                             this._markers.push(
-                                written / SynthConstants.AudioChannels,
+                                written / this._frameStride,
                                 data.mediaStart ?? -1,
                                 data.mediaPerFrame ?? 0,
                                 data.countInEnd === true,
@@ -173,8 +180,8 @@ export class AlphaSynthWebWorklet {
                     outputs: Float32Array[][],
                     _parameters: Record<string, Float32Array>
                 ): boolean {
-                    if (outputs.length !== 1 && outputs[0].length !== 2) {
-                        return false;
+                    if (outputs.length < this._busCount) {
+                        return true;
                     }
 
                     const left: Float32Array = outputs[0][0];
@@ -185,9 +192,16 @@ export class AlphaSynthWebWorklet {
                     }
 
                     if (this._isHeld) {
-                        left.fill(0);
-                        right.fill(0);
+                        for (const output of outputs) {
+                            for (const channel of output) {
+                                channel.fill(0);
+                            }
+                        }
                         return true;
+                    }
+
+                    if (this._busCount > 1) {
+                        return this._processBuses(outputs, left.length);
                     }
 
                     const samples: number = left.length + right.length;
@@ -228,6 +242,49 @@ export class AlphaSynthWebWorklet {
                     return this._circularBuffer.count > 0 || !this._isStopped;
                 }
 
+                private _processBuses(outputs: Float32Array[][], blockFrames: number): boolean {
+                    const stride = this._frameStride;
+                    const samples: number = blockFrames * stride;
+                    let buffer = this._outputBuffer;
+                    if (buffer.length !== samples) {
+                        buffer = new Float32Array(samples);
+                        this._outputBuffer = buffer;
+                    }
+                    const mediaTime = this._markers.mediaTimeAtReadPosition();
+                    const samplesFromBuffer = this._circularBuffer.read(
+                        buffer,
+                        0,
+                        Math.min(buffer.length, this._circularBuffer.count)
+                    );
+                    const frames = samplesFromBuffer / stride;
+                    const blockStamped = this._markers.consume(frames) && frames === blockFrames;
+                    for (let b = 0; b < this._busCount; b++) {
+                        const left = outputs[b][0];
+                        const right = outputs[b][1];
+                        if (!left || !right) {
+                            continue;
+                        }
+                        let s = b * SynthConstants.AudioChannels;
+                        for (let i = 0; i < frames; i++) {
+                            left[i] = buffer[s];
+                            right[i] = buffer[s + 1];
+                            s += stride;
+                        }
+                        // an underrun: silence on every bus
+                        left.fill(0, frames);
+                        right.fill(0, frames);
+                    }
+
+                    this.port.postMessage({
+                        cmd: 'alphaSynth.output.samplesPlayed',
+                        samples: frames
+                    });
+                    this._reportMediaTime(mediaTime, blockStamped, blockFrames);
+                    this._requestBuffers();
+
+                    return this._circularBuffer.count > 0 || !this._isStopped;
+                }
+
                 private _reportMediaTime(mediaTime: number, blockStamped: boolean, blockFrames: number): void {
                     // about every 50 ms: "at this context frame I output this media time" (spec §5)
                     this._framesSinceReport += blockFrames;
@@ -258,13 +315,15 @@ export class AlphaSynthWebWorklet {
                     // if we fall under the half of buffers
                     // we request one half
                     const halfBufferCount = (this._bufferCount / 2) | 0;
-                    const halfSamples: number = halfBufferCount * AlphaSynthWebWorkletProcessor.BufferSize;
+                    // a chunk of the synthesizer holds BufferSize values per bus
+                    const chunkSamples: number = AlphaSynthWebWorkletProcessor.BufferSize * this._busCount;
+                    const halfSamples: number = halfBufferCount * chunkSamples;
                     // Issue #631: it can happen that requestBuffers is called multiple times
                     // before we already get samples via addSamples, therefore we need to
                     // remember how many buffers have been requested, and consider them as available.
                     const bufferedSamples =
                         this._circularBuffer.count +
-                        this._requestedBufferCount * AlphaSynthWebWorkletProcessor.BufferSize;
+                        this._requestedBufferCount * chunkSamples;
                     if (bufferedSamples < halfSamples) {
                         for (let i: number = 0; i < halfBufferCount; i++) {
                             this.port.postMessage({
@@ -329,6 +388,33 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase i
      * @internal
      */
     public destinationNode: AudioNode | null = null;
+
+    /**
+     * The stereo buses the worklet plays (`player.synthOutputBusCount`, 1..8): the worker must render as many.
+     * @internal
+     */
+    public readonly outputBusCount: number;
+
+    private _busNodes: GainNode[] | null = null;
+    private _busReturnNode: GainNode | null = null;
+
+    /**
+     * One node per bus, connected to {@link busReturnNode} by default (null with a single bus or before open):
+     * an app disconnects one and routes it through its own nodes back into {@link busReturnNode}.
+     * They outlive the worklet, which is created again on play.
+     * @internal
+     */
+    public get busNodes(): GainNode[] | null {
+        return this._busNodes;
+    }
+
+    /**
+     * Where the buses meet again, connected to {@link destinationNode} (or the context's destination).
+     * @internal
+     */
+    public get busReturnNode(): GainNode | null {
+        return this._busReturnNode;
+    }
 
     /** @internal */
     public readonly mediaTimestamp: IEventEmitterOfT<MediaTimestampEventArgs> =
@@ -396,13 +482,26 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase i
         super();
         this._settings = settings;
         this._boundHandleMessage = e => this._handleMessage(e);
+        this.outputBusCount = Math.min(8, Math.max(1, settings.player.synthOutputBusCount | 0));
     }
 
     public override open(bufferTimeInMilliseconds: number) {
         super.open(bufferTimeInMilliseconds);
         this._bufferTimeInMilliseconds = bufferTimeInMilliseconds;
+        const ctx = this.context;
+        if (ctx && this.outputBusCount > 1) {
+            this._busReturnNode = ctx.createGain();
+            this._busNodes = [];
+            for (let b = 0; b < this.outputBusCount; b++) {
+                const bus = ctx.createGain();
+                bus.connect(this._busReturnNode);
+                this._busNodes.push(bus);
+            }
+        }
         this.onReady();
     }
+
+    private _isReturnConnected: boolean = false;
 
     public override play(): void {
         // resuming the context must happen synchronously within the user interaction
@@ -479,11 +578,13 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase i
             }
 
             // create a worklet node which will replace the silence with the generated audio
+            const busCount = this.outputBusCount;
             worklet = new AudioWorkletNode(ctx, 'alphatab', {
-                numberOfOutputs: 1,
-                outputChannelCount: [2],
+                numberOfOutputs: busCount,
+                outputChannelCount: new Array<number>(busCount).fill(2),
                 processorOptions: {
-                    bufferTimeInMilliseconds: this._bufferTimeInMilliseconds
+                    bufferTimeInMilliseconds: this._bufferTimeInMilliseconds,
+                    busCount: busCount
                 }
             }) as AudioWorkletNode<IAlphaSynthWorkerMessage>;
             this._worklet = worklet;
@@ -494,7 +595,19 @@ export class AlphaSynthAudioWorkletOutput extends AlphaSynthWebAudioOutputBase i
             this.createSource(ctx);
             this.source!.start(0);
             this.source!.connect(worklet);
-            worklet.connect(this.destinationNode ?? ctx.destination);
+            const busNodes = this._busNodes;
+            if (busNodes && this._busReturnNode) {
+                for (let b = 0; b < busNodes.length; b++) {
+                    worklet.connect(busNodes[b], b, 0);
+                }
+                // destinationNode is set before the first start (mixing mode)
+                if (!this._isReturnConnected) {
+                    this._isReturnConnected = true;
+                    this._busReturnNode.connect(this.destinationNode ?? ctx.destination);
+                }
+            } else {
+                worklet.connect(this.destinationNode ?? ctx.destination);
+            }
         }
 
         for (const e of pendingEvents) {

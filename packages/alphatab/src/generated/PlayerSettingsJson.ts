@@ -340,4 +340,17 @@ export interface PlayerSettingsJson {
      * media player. Only used with {@link enableSynthesizerWithMedia}.
      */
     mediaSyncOffsetInMilliseconds?: number;
+    /**
+     * The number of stereo outputs (buses) the synthesizer plays, to process tracks separately.
+     * @since 1.9.0
+     * @defaultValue `1`
+     * @category Player - JavaScript Specific
+     * @remarks
+     * With more than one, `api.changeTrackOutputBus()` routes tracks to a bus and `api.synthBusNodes` gives one
+     * WebAudio node per bus: disconnect a bus node, run it through your own nodes and connect them to
+     * `api.synthBusReturnNode`. Bus 0 gets the tracks not routed elsewhere and the metronome. Only the AudioWorklet
+     * output ({@link outputMode} `WebAudioAudioWorklets`) plays buses, the others play their sum. Fork-only (tabz),
+     * between 1 and 8; changing it creates a new player.
+     */
+    synthOutputBusCount?: number;
 }

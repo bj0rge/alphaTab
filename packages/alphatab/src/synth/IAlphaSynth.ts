@@ -276,6 +276,19 @@ export interface IAlphaSynth {
     setChannelVolume(channel: number, volume: number): void;
 
     /**
+     * Routes a channel to an output bus of the synthesizer (0 is the default bus; a bus that does not exist means 0).
+     * Only outputs created with several buses play them separately, the others play the sum.
+     * @param channel The channel number.
+     * @param bus The output bus.
+     */
+    setChannelOutputBus(channel: number, bus: number): void;
+
+    /**
+     * Routes every channel back to bus 0.
+     */
+    resetChannelOutputBuses(): void;
+
+    /**
      * This event is fired when the player is ready to be interacted with.
      */
     readonly ready: IEventEmitter;

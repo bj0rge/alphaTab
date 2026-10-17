@@ -80,6 +80,13 @@ export class AlphaSynthBase implements IAlphaSynth {
     protected midiEventsPlayedFilterSet: Set<MidiEventType> = new Set<MidiEventType>();
     private _notPlayedSamples: number = 0;
 
+    /**
+     * The values per frame in the sample buffers: a stereo pair per output bus of the synthesizer.
+     */
+    private get _frameStride(): number {
+        return SynthConstants.AudioChannels * this.synthesizer.outputBusCount;
+    }
+
     private _follow: boolean = false;
     private _followMediaDuration: number = 0;
     private _followMediaTime: number = 0;
@@ -380,7 +387,7 @@ export class AlphaSynthBase implements IAlphaSynth {
             (!this.sequencer.isFinished || this.synthesizer.activeVoiceCount > 0)
         ) {
             let samples: Float32Array = new Float32Array(
-                SynthConstants.MicroBufferSize * SynthConstants.MicroBufferCount * SynthConstants.AudioChannels
+                SynthConstants.MicroBufferSize * SynthConstants.MicroBufferCount * this._frameStride
             );
             let bufferPos: number = 0;
 
@@ -392,7 +399,7 @@ export class AlphaSynthBase implements IAlphaSynth {
                     bufferPos,
                     SynthConstants.MicroBufferSize
                 );
-                bufferPos += SynthConstants.MicroBufferSize * SynthConstants.AudioChannels;
+                bufferPos += SynthConstants.MicroBufferSize * this._frameStride;
                 // push all processed events into the queue
                 // for informing users about played events
                 for (const e of synthesizedEvents) {
@@ -444,7 +451,7 @@ export class AlphaSynthBase implements IAlphaSynth {
               SynthConstants.MicroBufferSize
             : -1;
         let samples: Float32Array = new Float32Array(
-            SynthConstants.MicroBufferSize * SynthConstants.MicroBufferCount * SynthConstants.AudioChannels
+            SynthConstants.MicroBufferSize * SynthConstants.MicroBufferCount * this._frameStride
         );
         let bufferPos: number = 0;
 
@@ -460,7 +467,7 @@ export class AlphaSynthBase implements IAlphaSynth {
                 this._followMediaTime = nextMediaTime;
             }
             const synthesizedEvents = this.synthesizer.synthesize(samples, bufferPos, SynthConstants.MicroBufferSize);
-            bufferPos += SynthConstants.MicroBufferSize * SynthConstants.AudioChannels;
+            bufferPos += SynthConstants.MicroBufferSize * this._frameStride;
             for (const e of synthesizedEvents) {
                 if (this.midiEventsPlayedFilterSet.has(e.event.type)) {
                     this.playedEventsQueue.enqueue(e);
@@ -489,7 +496,7 @@ export class AlphaSynthBase implements IAlphaSynth {
             chunk.countInFramesLeft = countInFramesLeft;
         }
         this._followChunks.enqueue(
-            new FollowedChunk(bufferPos / SynthConstants.AudioChannels, chunk.mediaStart, chunk.mediaPerFrame)
+            new FollowedChunk(bufferPos / this._frameStride, chunk.mediaStart, chunk.mediaPerFrame)
         );
         this._notPlayedSamples += samples.length;
         if (this.mediaSampleOutput) {
@@ -701,6 +708,14 @@ export class AlphaSynthBase implements IAlphaSynth {
         this.synthesizer.channelSetMixVolume(channel, volume);
     }
 
+    public setChannelOutputBus(channel: number, bus: number): void {
+        this.synthesizer.channelSetOutputBus(channel, bus);
+    }
+
+    public resetChannelOutputBuses(): void {
+        this.synthesizer.resetChannelOutputBuses();
+    }
+
     private _onSamplesPlayed(sampleCount: number): void {
         if (sampleCount === 0) {
             return;
@@ -710,13 +725,13 @@ export class AlphaSynthBase implements IAlphaSynth {
             return;
         }
         const playedMillis: number = (sampleCount / this.synthesizer.outSampleRate) * 1000;
-        this._notPlayedSamples -= sampleCount * SynthConstants.AudioChannels;
+        this._notPlayedSamples -= sampleCount * this._frameStride;
         this.updateTimePosition(this._timePosition + playedMillis, false);
         this.checkForFinish();
     }
 
     private _onFollowSamplesPlayed(frameCount: number): void {
-        this._notPlayedSamples -= frameCount * SynthConstants.AudioChannels;
+        this._notPlayedSamples -= frameCount * this._frameStride;
         let remaining = frameCount;
         let playedMediaTime = -1;
         while (remaining > 0 && !this._followChunks.isEmpty) {
@@ -928,8 +943,8 @@ export class AlphaSynth extends AlphaSynthBase {
      * Initializes a new instance of the {@link AlphaSynth} class.
      * @param output The output to use for playing the generated samples.
      */
-    public constructor(output: ISynthOutput, bufferTimeInMilliseconds: number) {
-        super(output, new TinySoundFont(output.sampleRate), bufferTimeInMilliseconds);
+    public constructor(output: ISynthOutput, bufferTimeInMilliseconds: number, outputBusCount: number = 1) {
+        super(output, new TinySoundFont(output.sampleRate, outputBusCount), bufferTimeInMilliseconds);
     }
 
     /**

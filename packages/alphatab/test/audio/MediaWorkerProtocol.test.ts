@@ -87,7 +87,8 @@ function startWorker(): FakeWorkerScope {
         cmd: 'alphaSynth.initialize',
         sampleRate: 44100,
         logLevel: LogLevel.None,
-        bufferTimeInMilliseconds: 500
+        bufferTimeInMilliseconds: 500,
+        outputBusCount: 1
     });
     scope.send({ cmd: 'alphaSynth.loadMidi', midi: JsonConverter.midiFileToJsObject(texMidi()) });
     return scope;

@@ -31,6 +31,14 @@ export interface IMediaFollowingOutput extends IMediaSampleOutput {
     readonly workletFailed: IEventEmitterOfT<Error>;
     readonly workletNode: AudioNode | null;
     /**
+     * One node per output bus (null with a single bus), see `player.synthOutputBusCount`.
+     */
+    readonly busNodes: GainNode[] | null;
+    /**
+     * Where the bus nodes meet again before {@link destinationNode}.
+     */
+    readonly busReturnNode: GainNode | null;
+    /**
      * Keep the worklet between plays: pause holds it silently, play resumes it (spike finding F7).
      */
     keepAlive: boolean;

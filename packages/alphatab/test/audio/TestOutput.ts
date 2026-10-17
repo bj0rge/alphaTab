@@ -19,8 +19,14 @@ export class TestOutput implements ISynthOutput {
         return 44100;
     }
 
-    public constructor(storeSamples: boolean = true) {
+    private _frameStride: number;
+
+    /**
+     * @param busCount The stereo buses of each frame the synthesizer renders.
+     */
+    public constructor(storeSamples: boolean = true, busCount: number = 1) {
         this._storeSamples = storeSamples;
+        this._frameStride = SynthConstants.AudioChannels * busCount;
     }
 
     public open(_bufferTimeInMilliseconds: number): void {
@@ -49,7 +55,7 @@ export class TestOutput implements ISynthOutput {
             this.samples.push(f);
         }
         this.sampleCount += f.length;
-        (this.samplesPlayed as EventEmitterOfT<number>).trigger(f.length / SynthConstants.AudioChannels);
+        (this.samplesPlayed as EventEmitterOfT<number>).trigger(f.length / this._frameStride);
     }
 
     public resetSamples(): void {

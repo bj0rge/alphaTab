@@ -61,7 +61,13 @@ export interface IAlphaTabWorkerGlobalScope<T> {
  */
 export type IAlphaSynthWorkerMessage =
     /* main -> worker */
-    | { cmd: 'alphaSynth.initialize'; sampleRate: number; logLevel: LogLevel; bufferTimeInMilliseconds: number }
+    | {
+          cmd: 'alphaSynth.initialize';
+          sampleRate: number;
+          logLevel: LogLevel;
+          bufferTimeInMilliseconds: number;
+          outputBusCount: number;
+      }
     | { cmd: 'alphaSynth.setLogLevel'; value: LogLevel }
     | { cmd: 'alphaSynth.setMasterVolume'; value: number }
     | { cmd: 'alphaSynth.setMetronomeVolume'; value: number }
@@ -84,6 +90,8 @@ export type IAlphaSynthWorkerMessage =
     | { cmd: 'alphaSynth.setChannelTranspositionPitch'; channel: number; semitones: number }
     | { cmd: 'alphaSynth.setChannelSolo'; channel: number; solo: boolean }
     | { cmd: 'alphaSynth.setChannelVolume'; channel: number; volume: number }
+    | { cmd: 'alphaSynth.setChannelOutputBus'; channel: number; bus: number }
+    | { cmd: 'alphaSynth.resetChannelOutputBuses' }
     | { cmd: 'alphaSynth.resetChannelStates' }
     | { cmd: 'alphaSynth.destroy' }
     | { cmd: 'alphaSynth.applyTranspositionPitches'; transpositionPitches: Map<number, number> }

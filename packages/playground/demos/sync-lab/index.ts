@@ -134,6 +134,9 @@ class SilentSynth implements IAudioSampleSynthesizer {
     public hasSamplesForPercussion(): boolean {
         return true;
     }
+    public readonly outputBusCount = 1;
+    public channelSetOutputBus(): void {}
+    public resetChannelOutputBuses(): void {}
 }
 
 function encodeWav(pcm: Int16Array, sampleRate: number): Uint8Array {
