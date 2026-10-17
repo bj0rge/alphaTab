@@ -6,6 +6,7 @@ import { LoadingOverlay } from '../components/LoadingOverlay';
 import { NavMenu } from '../components/NavMenu';
 import { SelectionHandles } from '../components/SelectionHandles';
 import { Sidebar } from '../components/Sidebar';
+import { ToneLab } from '../components/ToneLab';
 import { type Mountable, css, html, injectStyles, mount, parseHtml } from '../util/Dom';
 import { Paths } from '../util/Paths';
 
@@ -108,6 +109,7 @@ export class ControlApp implements Mountable {
     private crosshair: Crosshair;
     private dragDrop: DragDrop;
     private nav: NavMenu;
+    private toneLab: ToneLab | null = null;
     private unsubError: () => void;
 
     constructor(options: ControlAppOptions = {}) {
@@ -127,6 +129,11 @@ export class ControlApp implements Mountable {
         const viewport = this.root.querySelector<HTMLElement>('.at-viewport')!;
         const canvas = this.root.querySelector<HTMLElement>('.at-canvas')!;
         const settings = buildSettings(options, viewport);
+        // ?tone=1 routes the synthesizer through a guitar amp chain (spike, docs/research/rse-tone-in-the-browser.md)
+        const tone = new URL(window.location.href).searchParams.get('tone') === '1';
+        if (tone) {
+            ToneLab.install();
+        }
 
         this.api = new alphaTab.AlphaTabApi(canvas, settings);
         this.unsubError = this.api.error.on(e => {
@@ -147,6 +154,10 @@ export class ControlApp implements Mountable {
             onEnter: () => this.overlay.enterDrag(),
             onLeave: () => this.overlay.leaveDrag()
         });
+        if (tone) {
+            this.toneLab = new ToneLab(this.api);
+            document.body.appendChild(this.toneLab.root);
+        }
         this.nav = new NavMenu();
         document.body.appendChild(this.nav.root);
 
@@ -159,6 +170,7 @@ export class ControlApp implements Mountable {
 
     dispose(): void {
         this.unsubError();
+        this.toneLab?.dispose();
         this.nav.dispose();
         this.dragDrop.dispose();
         this.crosshair.dispose();
